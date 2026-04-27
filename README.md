@@ -70,4 +70,4 @@ You may use, modify, and redistribute MultiRP — including in commercial projec
 ## Donations are Welcomed!
 [AlarkiusEJ's Ko-Fi](https://ko-fi.com/AlarkiusEJ)
 
-Donating at least a dollar or so can help this project stay alive! You also be helping the author out with different things and creative works. 
+Donating at least a dollar or so can help this project stay alive! You also be helping the author out with different things and creative works. Fuel the dragon's caffeine addiction 🐉
