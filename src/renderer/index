@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <title>MultiRP</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">M</div>
+        <div>
+          <div class="brand-title">MultiRP</div>
+          <div class="brand-sub">Multi-profile Discord Rich Presence</div>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <span id="statusDot" class="status-dot offline"></span>
+        <span id="statusText" class="status-text">No profile active</span>
+      </div>
+    </header>
+
+    <nav class="tabs" id="tabs"></nav>
+
+    <main class="content">
+      <section class="form-card">
+        <div class="row">
+          <div class="field">
+            <label>Profile Name <span class="hint">(local label, not shown on Discord)</span></label>
+            <input type="text" id="profileName" maxlength="40" placeholder="e.g. Coding Mode" />
+          </div>
+          <div class="field">
+            <label>Discord Application Client ID <span class="hint">(from <a href="#" id="openDevPortal">Developer Portal</a>)</span></label>
+            <input type="text" id="clientId" placeholder="e.g. 1234567890123456789" inputmode="numeric" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label>Activity Type</label>
+            <select id="activityType">
+              <option value="0">Playing</option>
+              <option value="2">Listening to</option>
+              <option value="3">Watching</option>
+              <option value="5">Competing in</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Timestamp Mode</label>
+            <select id="timestampMode">
+              <option value="none">None</option>
+              <option value="elapsed">Elapsed (starts when activated)</option>
+              <option value="custom_start">Custom start</option>
+              <option value="custom_range">Custom start + end</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row" id="customTimestampsRow" style="display:none;">
+          <div class="field">
+            <label>Start (Unix seconds)</label>
+            <input type="number" id="startTimestamp" placeholder="e.g. 1745740000" />
+          </div>
+          <div class="field">
+            <label>End (Unix seconds)</label>
+            <input type="number" id="endTimestamp" placeholder="e.g. 1745750000" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Details <span class="counter" id="detailsCounter">0/128</span></label>
+          <input type="text" id="details" maxlength="128" placeholder="First line shown on Discord" />
+        </div>
+
+        <div class="field">
+          <label>State <span class="counter" id="stateCounter">0/128</span></label>
+          <input type="text" id="state" maxlength="128" placeholder="Second line shown on Discord" />
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label>Large Image Key <span class="hint">(asset name in Dev Portal)</span></label>
+            <input type="text" id="largeImageKey" placeholder="e.g. main_logo" />
+          </div>
+          <div class="field">
+            <label>Large Image Tooltip <span class="counter" id="largeImageTextCounter">0/128</span></label>
+            <input type="text" id="largeImageText" maxlength="128" placeholder="Hover text" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label>Small Image Key</label>
+            <input type="text" id="smallImageKey" placeholder="e.g. status_icon" />
+          </div>
+          <div class="field">
+            <label>Small Image Tooltip <span class="counter" id="smallImageTextCounter">0/128</span></label>
+            <input type="text" id="smallImageText" maxlength="128" placeholder="Hover text" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label>Party Size — Current</label>
+            <input type="number" id="partyCurrent" min="0" placeholder="optional" />
+          </div>
+          <div class="field">
+            <label>Party Size — Max</label>
+            <input type="number" id="partyMax" min="0" placeholder="optional" />
+          </div>
+        </div>
+
+        <div class="section-header">Buttons <span class="hint">— Up to 2. Clickable for OTHER users on Discord (not yourself)</span></div>
+
+        <div class="row">
+          <div class="field">
+            <label>Button 1 Label <span class="counter" id="btn1LabelCounter">0/32</span></label>
+            <input type="text" id="button1Label" maxlength="32" placeholder="e.g. Visit Site" />
+          </div>
+          <div class="field">
+            <label>Button 1 URL</label>
+            <input type="url" id="button1Url" placeholder="https://example.com" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label>Button 2 Label <span class="counter" id="btn2LabelCounter">0/32</span></label>
+            <input type="text" id="button2Label" maxlength="32" placeholder="e.g. Watch Stream" />
+          </div>
+          <div class="field">
+            <label>Button 2 URL</label>
+            <input type="url" id="button2Url" placeholder="https://example.com" />
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="btnActivate" class="btn primary">Activate</button>
+          <button id="btnUpdate" class="btn secondary" disabled>Update Live</button>
+          <button id="btnDeactivate" class="btn danger" disabled>Deactivate</button>
+          <span class="spacer"></span>
+          <button id="btnImport" class="btn ghost">Import JSON</button>
+          <button id="btnExport" class="btn ghost">Export JSON</button>
+          <button id="btnReset" class="btn ghost">Clear Profile</button>
+        </div>
+
+        <div id="errorBox" class="error-box" style="display:none;"></div>
+      </section>
+
+      <aside class="preview-card">
+        <div class="preview-header">Preview</div>
+        <div class="preview-body">
+          <div class="preview-images">
+            <div class="preview-large" id="prevLarge"></div>
+            <div class="preview-small" id="prevSmall"></div>
+          </div>
+          <div class="preview-text">
+            <div class="preview-app" id="prevAppName">App name (Client ID)</div>
+            <div class="preview-details" id="prevDetails">Details</div>
+            <div class="preview-state" id="prevState">State</div>
+          </div>
+        </div>
+        <div class="preview-buttons" id="prevButtons"></div>
+        <div class="preview-note">
+          Discord wraps long lines automatically. Buttons only appear clickable to other users.
+        </div>
+      </aside>
+    </main>
+
+    <footer class="footer">
+      <span>v1.0.0 · Built by Alarkius Elvya Jay</span>
+      <span class="footer-right">
+        <a href="#" id="openHelp">Help &amp; Setup Guide</a>
+      </span>
+    </footer>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
