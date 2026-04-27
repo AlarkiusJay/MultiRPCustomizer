@@ -64,4 +64,8 @@ Licensed under the [Apache License 2.0](LICENSE).
 
 Copyright © 2026 Alarkius Elvya Jay.
 
+
 You may use, modify, and redistribute MultiRP — including in commercial projects — provided you keep the `LICENSE` and `NOTICE` files intact and clearly mark any modifications. The Apache 2.0 license also includes an explicit patent grant: contributors cannot sue downstream users over patent claims on their contributions.
+
+[Donations are Welcomed!](https://ko-fi.com/AlarkiusEJ)
+Donating at least a dollar or so can help this project stay alive! 
