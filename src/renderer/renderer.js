@@ -79,7 +79,9 @@ function renderTabs() {
   state.profiles.forEach((p, i) => {
     const tab = document.createElement('div');
     tab.className = 'tab' + (i === state.activeTab ? ' active' : '');
-    tab.title = p.name;
+    tab.title = `${p.name} — drag to reorder`;
+    tab.draggable = true;
+    tab.dataset.index = String(i);
 
     if (state.liveProfileId === p.id) {
       const dot = document.createElement('span');
@@ -88,6 +90,7 @@ function renderTabs() {
     }
 
     const label = document.createElement('span');
+    label.className = 'tab-label';
     label.textContent = p.name || `Profile ${i + 1}`;
     tab.appendChild(label);
 
@@ -96,6 +99,8 @@ function renderTabs() {
       close.className = 'tab-close';
       close.textContent = '×';
       close.title = 'Delete profile';
+      close.draggable = false; // close button shouldn't initiate drags
+      close.onmousedown = (e) => e.stopPropagation();
       close.onclick = (e) => {
         e.stopPropagation();
         deleteProfile(i);
@@ -103,7 +108,57 @@ function renderTabs() {
       tab.appendChild(close);
     }
 
-    tab.onclick = () => switchTab(i);
+    tab.addEventListener('click', (e) => {
+      // Don't switch if drag just ended on this element
+      if (tab.dataset.justDropped === '1') {
+        delete tab.dataset.justDropped;
+        return;
+      }
+      switchTab(i);
+    });
+
+    // Drag-and-drop reorder handlers
+    tab.addEventListener('dragstart', (e) => {
+      tab.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      // Required for Firefox; data is unused (we read state.dragIndex)
+      try { e.dataTransfer.setData('text/plain', String(i)); } catch (_) {}
+      state.dragIndex = i;
+    });
+    tab.addEventListener('dragend', () => {
+      tab.classList.remove('dragging');
+      document.querySelectorAll('.tab.drop-before, .tab.drop-after').forEach(el => {
+        el.classList.remove('drop-before', 'drop-after');
+      });
+      state.dragIndex = null;
+    });
+    tab.addEventListener('dragover', (e) => {
+      if (state.dragIndex == null || state.dragIndex === i) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const rect = tab.getBoundingClientRect();
+      const before = (e.clientX - rect.left) < rect.width / 2;
+      tab.classList.toggle('drop-before', before);
+      tab.classList.toggle('drop-after', !before);
+    });
+    tab.addEventListener('dragleave', () => {
+      tab.classList.remove('drop-before', 'drop-after');
+    });
+    tab.addEventListener('drop', (e) => {
+      e.preventDefault();
+      tab.classList.remove('drop-before', 'drop-after');
+      const from = state.dragIndex;
+      if (from == null || from === i) return;
+      const rect = tab.getBoundingClientRect();
+      const before = (e.clientX - rect.left) < rect.width / 2;
+      let to = before ? i : i + 1;
+      // Account for index shift when moving forward
+      if (from < to) to -= 1;
+      reorderProfiles(from, to);
+      // Suppress the click that fires after drop
+      tab.dataset.justDropped = '1';
+    });
+
     tabsEl.appendChild(tab);
   });
 
@@ -115,6 +170,21 @@ function renderTabs() {
     add.onclick = addProfile;
     tabsEl.appendChild(add);
   }
+}
+
+function reorderProfiles(from, to) {
+  if (from === to || from < 0 || from >= state.profiles.length) return;
+  to = Math.max(0, Math.min(state.profiles.length - 1, to));
+  // Track active profile by id so its highlight follows the move
+  const activeId = state.profiles[state.activeTab] ? state.profiles[state.activeTab].id : null;
+  const [moved] = state.profiles.splice(from, 1);
+  state.profiles.splice(to, 0, moved);
+  if (activeId != null) {
+    const newIdx = state.profiles.findIndex(p => p.id === activeId);
+    if (newIdx !== -1) state.activeTab = newIdx;
+  }
+  renderTabs();
+  saveStore();
 }
 
 function switchTab(i) {
@@ -233,6 +303,66 @@ function showError(msg) {
 }
 
 // ---------- Live Preview ----------
+//
+// Asset resolution: when a clientId + image key are present, ask main to look up
+// the real CDN URL via Discord's public application-assets endpoint. Cache results
+// by `${clientId}|${key}` so we don't spam Discord with every keystroke.
+const assetUrlCache = new Map(); // "clientId|key" -> url|null
+const assetPending = new Map();   // "clientId|key" -> Promise
+let assetDebounceTimer = null;
+
+function setPreviewImage(el, url, fallbackGradient) {
+  // Clear any prior background-image / state
+  el.classList.remove('has-image', 'loading');
+  el.style.backgroundImage = '';
+  if (url) {
+    // Probe first so a broken URL doesn't leave us showing a broken-image icon
+    const probe = new Image();
+    probe.onload = () => {
+      el.style.background = `center / cover no-repeat url("${url}")`;
+      el.classList.add('has-image');
+    };
+    probe.onerror = () => {
+      el.style.background = fallbackGradient;
+    };
+    probe.src = url;
+  } else {
+    el.style.background = fallbackGradient;
+  }
+}
+
+async function resolveAndApply(el, clientId, key, fallbackGradient) {
+  if (!key) {
+    setPreviewImage(el, null, fallbackGradient);
+    return;
+  }
+  const cacheKey = `${clientId || ''}|${key}`;
+  if (assetUrlCache.has(cacheKey)) {
+    setPreviewImage(el, assetUrlCache.get(cacheKey), fallbackGradient);
+    return;
+  }
+  // Show fallback while loading
+  setPreviewImage(el, null, fallbackGradient);
+  el.classList.add('loading');
+  let promise = assetPending.get(cacheKey);
+  if (!promise) {
+    promise = window.multirp.resolveAsset(clientId, key).catch(() => ({ ok: false }));
+    assetPending.set(cacheKey, promise);
+  }
+  const result = await promise;
+  assetPending.delete(cacheKey);
+  const url = (result && result.ok) ? result.url : null;
+  assetUrlCache.set(cacheKey, url);
+  // Re-check the user is still viewing this profile/key combo before applying
+  const cur = currentProfile();
+  const stillRelevant =
+    (el.id === 'prevLarge' && cur.largeImageKey === key && cur.clientId === clientId) ||
+    (el.id === 'prevSmall' && cur.smallImageKey === key && cur.clientId === clientId);
+  if (stillRelevant) {
+    setPreviewImage(el, url, fallbackGradient);
+  }
+}
+
 function renderPreview() {
   const p = currentProfile();
   document.getElementById('prevAppName').textContent = p.name || 'App name';
@@ -254,11 +384,29 @@ function renderPreview() {
     btnsEl.appendChild(b);
   }
 
-  // Image placeholder coloring based on whether key is set
   const big = document.getElementById('prevLarge');
-  big.style.background = p.largeImageKey ? 'linear-gradient(135deg,#5563d4,#7c8cff)' : 'var(--bg-3)';
   const small = document.getElementById('prevSmall');
-  small.style.background = p.smallImageKey ? 'linear-gradient(135deg,#7c8cff,#5563d4)' : 'var(--bg-4)';
+  const bigFallback = p.largeImageKey ? 'linear-gradient(135deg,#5563d4,#7c8cff)' : 'var(--bg-3)';
+  const smallFallback = p.smallImageKey ? 'linear-gradient(135deg,#7c8cff,#5563d4)' : 'var(--bg-4)';
+
+  // Show fallback immediately for instant feedback, then debounce the network call.
+  setPreviewImage(big, null, bigFallback);
+  setPreviewImage(small, null, smallFallback);
+
+  clearTimeout(assetDebounceTimer);
+  assetDebounceTimer = setTimeout(() => {
+    const cur = currentProfile();
+    if (cur.largeImageKey) {
+      resolveAndApply(big, cur.clientId, cur.largeImageKey, bigFallback);
+    }
+    if (cur.smallImageKey) {
+      resolveAndApply(small, cur.clientId, cur.smallImageKey, smallFallback);
+    }
+  }, 500);
+
+  // Tooltips for images using the user-provided tooltip text
+  big.title = p.largeImageTooltip || '';
+  small.title = p.smallImageTooltip || '';
 }
 
 // ---------- Sync field <-> profile ----------

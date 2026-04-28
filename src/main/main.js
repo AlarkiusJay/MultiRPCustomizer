@@ -670,6 +670,83 @@ ipcMain.handle('app:getVersion', async () => {
   return app.getVersion();
 });
 
+// ---------------- Discord App Asset resolver ----------------
+// Resolves an image "key" (asset name) for a given Discord Application Client ID
+// to a real CDN URL so the live preview can render the actual image.
+//
+// Three cases:
+//  1. Empty / missing  -> null
+//  2. Already an http(s) URL  -> return as-is (Discord RPC also accepts external URLs)
+//  3. Plain key  -> look up the application's published Art Assets via the
+//     public oauth2 endpoint and return a CDN URL for the matching asset.
+//
+// Results are cached per-clientId for 5 minutes so we don't spam Discord.
+const assetCache = new Map(); // clientId -> { fetchedAt, assets: [{id,name,type}] }
+const ASSET_TTL_MS = 5 * 60 * 1000;
+
+async function fetchAppAssets(clientId) {
+  if (!/^\d{15,25}$/.test(String(clientId || ''))) {
+    throw new Error('Invalid Client ID');
+  }
+  const cached = assetCache.get(clientId);
+  if (cached && (Date.now() - cached.fetchedAt) < ASSET_TTL_MS) {
+    return cached.assets;
+  }
+  // Public endpoint — no auth required for published Rich Presence assets.
+  const url = `https://discord.com/api/v10/oauth2/applications/${clientId}/assets`;
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': `MultiRP/${app.getVersion()} (+https://github.com/AlarkiusJay/MultiRPCustomizer)`,
+      'Accept': 'application/json'
+    }
+  });
+  if (!res.ok) {
+    throw new Error(`Discord API ${res.status}`);
+  }
+  const assets = await res.json();
+  assetCache.set(clientId, { fetchedAt: Date.now(), assets });
+  return assets;
+}
+
+ipcMain.handle('assets:resolve', async (_evt, { clientId, key }) => {
+  try {
+    if (!key) return { ok: true, url: null };
+    const trimmed = String(key).trim();
+
+    // Direct URL keys: Discord allows external URLs as image keys via mp:external,
+    // but here we just let the renderer load them directly.
+    if (/^https?:\/\//i.test(trimmed)) {
+      return { ok: true, url: trimmed };
+    }
+    // mp:external/... -> Discord media proxy
+    if (trimmed.startsWith('mp:external/')) {
+      const rest = trimmed.replace(/^mp:external\//, '');
+      return { ok: true, url: `https://media.discordapp.net/external/${rest}` };
+    }
+
+    if (!clientId) return { ok: false, error: 'No Client ID' };
+    const assets = await fetchAppAssets(clientId);
+    // Asset name match is case-insensitive in Discord's RPC.
+    const lower = trimmed.toLowerCase();
+    const match = assets.find(a => String(a.name || '').toLowerCase() === lower);
+    if (!match) return { ok: false, error: 'Asset key not found in Developer Portal' };
+    const cdn = `https://cdn.discordapp.com/app-assets/${clientId}/${match.id}.png?size=512`;
+    return { ok: true, url: cdn };
+  } catch (err) {
+    return { ok: false, error: err.message || String(err) };
+  }
+});
+
+ipcMain.handle('assets:list', async (_evt, { clientId }) => {
+  try {
+    if (!clientId) return { ok: false, error: 'No Client ID' };
+    const assets = await fetchAppAssets(clientId);
+    return { ok: true, assets: assets.map(a => ({ id: a.id, name: a.name, type: a.type })) };
+  } catch (err) {
+    return { ok: false, error: err.message || String(err) };
+  }
+});
+
 // Import / Export single profile — multi-format with CustomRP (.crp) interop.
 // Supported on export: .json (MultiRP native), .crp (CustomRP XML), .csv, .md, .txt.
 // Supported on import: same set, format auto-detected from extension and content.

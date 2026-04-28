@@ -21,6 +21,10 @@ contextBridge.exposeInMainWorld('multirp', {
   exportProfile: (profile) => ipcRenderer.invoke('profile:export', profile),
   importProfile: () => ipcRenderer.invoke('profile:import'),
 
+  // Discord application asset resolver (for live preview thumbnails)
+  resolveAsset: (clientId, key) => ipcRenderer.invoke('assets:resolve', { clientId, key }),
+  listAssets: (clientId) => ipcRenderer.invoke('assets:list', { clientId }),
+
   // External link opener (safe wrapper — only allows http/https URLs)
   openExternal: (url) => {
     try {
