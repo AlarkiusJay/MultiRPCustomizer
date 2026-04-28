@@ -45,7 +45,11 @@ function newProfile(idx) {
 let state = {
   profiles: [newProfile(1)],
   activeTab: 0,
-  liveProfileId: null
+  liveProfileId: null,
+  view: 'profile',          // 'profile' | 'updates'
+  updateState: null,        // last update state from main
+  autoInstall: true,        // mirror of persisted setting
+  hasSeenLatestUpdate: true // false when an update arrives & we need a dot
 };
 
 // ---------- Persistence ----------
@@ -111,6 +115,7 @@ function renderTabs() {
 }
 
 function switchTab(i) {
+  if (state.view === 'updates') switchView('profile');
   state.activeTab = i;
   renderForm();
   renderTabs();
@@ -119,6 +124,7 @@ function switchTab(i) {
 
 function addProfile() {
   if (state.profiles.length >= MAX_PROFILES) return;
+  if (state.view === 'updates') switchView('profile');
   state.profiles.push(newProfile(state.profiles.length + 1));
   state.activeTab = state.profiles.length - 1;
   renderTabs();
@@ -427,6 +433,12 @@ async function init() {
   document.getElementById('btnImport').onclick = importProfile;
   document.getElementById('btnReset').onclick = resetProfile;
 
+  // Brand logo (replaces M placeholder)
+  document.getElementById('brandLogo').src = 'logo.png';
+
+  // Updates wiring
+  setupUpdatesView();
+
   document.getElementById('openDevPortal').onclick = (e) => {
     e.preventDefault();
     // Renderer is context-isolated so `require` is unavailable here.
@@ -483,6 +495,246 @@ async function init() {
   });
 
   updateStatus('No profile active', 'offline');
+}
+
+// =============================================
+// Updates view
+// =============================================
+function setupUpdatesView() {
+  const updatesTab = document.getElementById('updatesTab');
+  const checkBtn = document.getElementById('updCheckBtn');
+  const downloadBtn = document.getElementById('updDownloadBtn');
+  const installBtn = document.getElementById('updInstallBtn');
+  const autoToggle = document.getElementById('updAutoToggle');
+  const repoLink = document.getElementById('updRepoLink');
+
+  updatesTab.onclick = () => switchView('updates');
+
+  checkBtn.onclick = async () => {
+    setUpdateMessage('info', 'Checking for updates…');
+    const r = await window.multirp.updates.check();
+    if (!r.ok) {
+      setUpdateMessage('error', r.error || 'Update check failed.');
+    }
+  };
+
+  downloadBtn.onclick = async () => {
+    setUpdateMessage('info', 'Downloading update…');
+    const r = await window.multirp.updates.download();
+    if (!r.ok) setUpdateMessage('error', r.error || 'Download failed.');
+  };
+
+  installBtn.onclick = async () => {
+    setUpdateMessage('info', 'Restarting to install…');
+    const r = await window.multirp.updates.install();
+    if (!r.ok) setUpdateMessage('error', r.error || 'Install failed.');
+  };
+
+  autoToggle.onchange = async () => {
+    state.autoInstall = autoToggle.checked;
+    await window.multirp.updates.setAutoInstall(autoToggle.checked);
+  };
+
+  repoLink.onclick = (e) => {
+    e.preventDefault();
+    window.multirp.openExternal('https://github.com/AlarkiusJay/MultiRPCustomizer/releases');
+  };
+
+  // Subscribe to live state
+  window.multirp.updates.onState((newState) => {
+    state.updateState = newState;
+    renderUpdatesView();
+    refreshUpdateDot();
+  });
+
+  // Pull initial state
+  refreshUpdatesAll();
+}
+
+async function refreshUpdatesAll() {
+  try {
+    const status = await window.multirp.updates.status();
+    state.updateState = status;
+    if (status.settings && typeof status.settings.autoInstall === 'boolean') {
+      state.autoInstall = status.settings.autoInstall;
+    }
+    // Pull current version from app if not in updateState yet
+    if (!status.currentVersion) {
+      try { status.currentVersion = await window.multirp.getVersion(); } catch {}
+    }
+    renderUpdatesView();
+    refreshUpdateDot();
+    refreshUpdateHistory();
+  } catch (e) {
+    console.error('refreshUpdatesAll failed:', e);
+  }
+}
+
+async function refreshUpdateHistory() {
+  try {
+    const hist = await window.multirp.updates.getHistory();
+    const ul = document.getElementById('updHistory');
+    ul.innerHTML = '';
+    if (!hist || hist.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'updates-history-empty';
+      li.textContent = 'No updates have been installed yet.';
+      ul.appendChild(li);
+      return;
+    }
+    // Show newest first
+    [...hist].reverse().forEach((h) => {
+      const li = document.createElement('li');
+      const ev = document.createElement('span');
+      ev.className = 'history-event ' + (h.event || '');
+      ev.textContent = h.event || 'event';
+      li.appendChild(ev);
+      const txt = document.createElement('span');
+      const from = h.from ? `v${h.from}` : '—';
+      const to = h.to ? `v${h.to}` : '—';
+      txt.innerHTML = `${from} <span class="history-arrow">→</span> ${to}`;
+      li.appendChild(txt);
+      const time = document.createElement('span');
+      time.className = 'history-time';
+      time.textContent = h.ts ? new Date(h.ts).toLocaleString() : '';
+      li.appendChild(time);
+      ul.appendChild(li);
+    });
+  } catch (e) {
+    console.error('refreshUpdateHistory failed:', e);
+  }
+}
+
+function switchView(view) {
+  state.view = view;
+  document.getElementById('viewProfile').hidden = (view !== 'profile');
+  document.getElementById('viewUpdates').hidden = (view !== 'updates');
+  document.getElementById('updatesTab').classList.toggle('active', view === 'updates');
+
+  // Update active styling on profile tabs
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('active', view === 'profile' && i === state.activeTab);
+  });
+
+  if (view === 'updates') {
+    state.hasSeenLatestUpdate = true;
+    refreshUpdateDot();
+    refreshUpdateHistory();
+  }
+}
+
+function setUpdateMessage(level, text) {
+  const el = document.getElementById('updMessage');
+  if (!text) { el.hidden = true; el.textContent = ''; return; }
+  el.hidden = false;
+  el.className = 'updates-message ' + (level || 'info');
+  el.textContent = text;
+}
+
+function renderUpdatesView() {
+  const us = state.updateState || {};
+  const pill = document.getElementById('updStatusPill');
+  const versionEl = document.getElementById('updCurrentVersion');
+  const footerEl = document.getElementById('footerVersion');
+  const checkBtn = document.getElementById('updCheckBtn');
+  const downloadBtn = document.getElementById('updDownloadBtn');
+  const installBtn = document.getElementById('updInstallBtn');
+  const autoToggle = document.getElementById('updAutoToggle');
+  const progressWrap = document.getElementById('updProgressWrap');
+  const progressFill = document.getElementById('updProgressFill');
+  const progressText = document.getElementById('updProgressText');
+  const changelogEl = document.getElementById('updChangelog');
+
+  const cur = us.currentVersion ? `v${us.currentVersion}` : '—';
+  versionEl.textContent = cur;
+  if (us.currentVersion) {
+    footerEl.textContent = `v${us.currentVersion} · Built by Alarkius Elvya Jay`;
+  }
+
+  autoToggle.checked = !!state.autoInstall;
+
+  pill.classList.remove('idle', 'checking', 'up-to-date', 'available', 'downloading', 'ready', 'error');
+
+  // Reset action visibility
+  checkBtn.disabled = false;
+  downloadBtn.disabled = true;
+  downloadBtn.hidden = false;
+  installBtn.hidden = true;
+  progressWrap.hidden = true;
+
+  switch (us.status) {
+    case 'checking':
+      pill.textContent = 'Checking…';
+      pill.classList.add('checking');
+      checkBtn.disabled = true;
+      break;
+    case 'available':
+      pill.textContent = `Update available — v${us.latestVersion || '?'}`;
+      pill.classList.add('available');
+      downloadBtn.disabled = false;
+      break;
+    case 'not-available':
+      pill.textContent = 'Up to date';
+      pill.classList.add('up-to-date');
+      break;
+    case 'downloading':
+      pill.textContent = `Downloading… ${us.downloadPercent || 0}%`;
+      pill.classList.add('downloading');
+      progressWrap.hidden = false;
+      progressFill.style.width = (us.downloadPercent || 0) + '%';
+      progressText.textContent = (us.downloadPercent || 0) + '%';
+      break;
+    case 'downloaded':
+      pill.textContent = `Update ready — v${us.latestVersion || '?'}`;
+      pill.classList.add('ready');
+      downloadBtn.hidden = true;
+      installBtn.hidden = false;
+      break;
+    case 'error':
+      pill.textContent = 'Update error';
+      pill.classList.add('error');
+      if (us.error) setUpdateMessage('error', us.error);
+      break;
+    default:
+      pill.textContent = 'Idle';
+      pill.classList.add('idle');
+  }
+
+  // Changelog
+  if (us.releaseNotes) {
+    changelogEl.innerHTML = formatReleaseNotes(us.releaseNotes, us.latestVersion);
+  } else if (us.status === 'not-available') {
+    changelogEl.textContent = `You’re on the latest version (v${us.currentVersion}).`;
+  }
+}
+
+function formatReleaseNotes(notes, version) {
+  // Strip HTML tags for safety, then preserve simple markdown bullets / line breaks.
+  const escaped = String(notes)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  // Naive: turn lines starting with - or * into bullets, **bold** into <b>
+  const lines = escaped.split(/\r?\n/).map((line) => {
+    let l = line.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+    l = l.replace(/`([^`]+)`/g, '<code>$1</code>');
+    if (/^\s*[-*]\s+/.test(l)) l = '• ' + l.replace(/^\s*[-*]\s+/, '');
+    return l;
+  });
+  const header = version ? `<b>v${version}</b>\n\n` : '';
+  return header + lines.join('\n');
+}
+
+function refreshUpdateDot() {
+  const dot = document.getElementById('updateDot');
+  const us = state.updateState || {};
+  // Show dot when there's a new version available or downloaded and the user hasn't viewed it yet
+  const hasNew = us.status === 'available' || us.status === 'downloading' || us.status === 'downloaded';
+  // Only flag as unseen if we discovered after the user last visited the tab
+  if (hasNew && state.view !== 'updates') {
+    state.hasSeenLatestUpdate = false;
+  }
+  dot.hidden = !(hasNew && !state.hasSeenLatestUpdate);
 }
 
 // Catch any unhandled error in init so the window shows something instead of pure grey.

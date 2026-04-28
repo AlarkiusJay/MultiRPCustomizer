@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;" />
   <title>MultiRP</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -10,7 +10,7 @@
   <div class="app">
     <header class="topbar">
       <div class="brand">
-        <div class="logo">M</div>
+        <img class="brand-logo" id="brandLogo" alt="MultiRP" />
         <div>
           <div class="brand-title">MultiRP</div>
           <div class="brand-sub">Multi-profile Discord Rich Presence</div>
@@ -22,9 +22,17 @@
       </div>
     </header>
 
-    <nav class="tabs" id="tabs"></nav>
+    <nav class="tabs-bar">
+      <div class="tabs" id="tabs"></div>
+      <div class="tabs-spacer"></div>
+      <div class="tab-utility" id="updatesTab" title="Update Logs">
+        <span class="tab-utility-icon" aria-hidden="true">↻</span>
+        <span>Update Logs</span>
+        <span class="update-dot" id="updateDot" hidden></span>
+      </div>
+    </nav>
 
-    <main class="content">
+    <main class="content" id="viewProfile">
       <section class="form-card">
         <div class="row">
           <div class="field">
@@ -169,8 +177,63 @@
       </aside>
     </main>
 
+    <!-- ===== Update Logs view ===== -->
+    <main class="content updates-view" id="viewUpdates" hidden>
+      <section class="updates-card">
+        <div class="updates-header">
+          <h2>Update Logs</h2>
+          <span class="updates-subtitle">Keep MultiRP up to date — powered by GitHub Releases</span>
+        </div>
+
+        <div class="updates-row">
+          <div class="updates-version-block">
+            <div class="updates-label">Current Version</div>
+            <div class="updates-version" id="updCurrentVersion">—</div>
+          </div>
+          <div class="updates-pill-block">
+            <span class="updates-pill" id="updStatusPill">Idle</span>
+          </div>
+        </div>
+
+        <div class="updates-progress-wrap" id="updProgressWrap" hidden>
+          <div class="updates-progress-bar"><div class="updates-progress-fill" id="updProgressFill"></div></div>
+          <div class="updates-progress-text" id="updProgressText">0%</div>
+        </div>
+
+        <div class="updates-actions">
+          <button class="btn primary" id="updCheckBtn">Check for Updates</button>
+          <button class="btn secondary" id="updDownloadBtn" disabled>Download Update</button>
+          <button class="btn primary" id="updInstallBtn" hidden>Restart &amp; Install</button>
+          <span class="spacer"></span>
+          <label class="updates-toggle">
+            <input type="checkbox" id="updAutoToggle" />
+            <span class="updates-toggle-track"><span class="updates-toggle-thumb"></span></span>
+            <span class="updates-toggle-label">Auto-install on next launch</span>
+          </label>
+        </div>
+
+        <div class="updates-message" id="updMessage" hidden></div>
+
+        <div class="updates-section">
+          <div class="updates-section-header">What’s New</div>
+          <div class="updates-changelog" id="updChangelog">No release notes available yet. Click <b>Check for Updates</b> to see the latest.</div>
+        </div>
+
+        <div class="updates-section">
+          <div class="updates-section-header">Update History</div>
+          <ul class="updates-history" id="updHistory">
+            <li class="updates-history-empty">No updates have been installed yet.</li>
+          </ul>
+        </div>
+
+        <div class="updates-footer-note">
+          MultiRP checks GitHub Releases at <a href="#" id="updRepoLink">AlarkiusJay/MultiRPCustomizer</a> on launch. Auto-install is on by default — toggle off to stay on your current version.
+        </div>
+      </section>
+    </main>
+
     <footer class="footer">
-      <span>v1.0.6 · Built by Alarkius Elvya Jay</span>
+      <span id="footerVersion">v1.2.0 · Built by Alarkius Elvya Jay</span>
       <span class="footer-right">
         <a href="#" id="openHelp">Help &amp; Setup Guide</a>
       </span>

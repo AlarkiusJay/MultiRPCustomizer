@@ -5,19 +5,178 @@
  * You may obtain a copy of the License at
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const RPC = require('discord-rpc');
+const { autoUpdater } = require('electron-updater');
 
 let mainWindow = null;
 let activeClient = null;       // current discord-rpc Client
 let activeProfileId = null;    // which profile is currently active
 let activeActivity = null;     // last sent activity payload (for re-send)
 
+// ---------- Auto-update state ----------
+// Persisted user setting: should we auto-install on next launch?
+// Live state: surfaced to renderer via 'updates:status' IPC.
+let updateState = {
+  status: 'idle',          // 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
+  currentVersion: null,    // populated on app ready
+  latestVersion: null,
+  releaseNotes: null,
+  releaseName: null,
+  releaseDate: null,
+  downloadPercent: 0,
+  error: null,
+  lastChecked: null
+};
+
 // Where we persist profiles
 const userDataPath = () => app.getPath('userData');
 const profilesFile = () => path.join(userDataPath(), 'profiles.json');
+const settingsFile = () => path.join(userDataPath(), 'settings.json');
+const updateHistoryFile = () => path.join(userDataPath(), 'update-history.json');
+
+function loadSettings() {
+  try {
+    if (fs.existsSync(settingsFile())) {
+      return JSON.parse(fs.readFileSync(settingsFile(), 'utf-8'));
+    }
+  } catch (e) {
+    console.error('Failed to load settings:', e);
+  }
+  return { autoInstall: true }; // default: auto-install ON
+}
+
+function saveSettings(s) {
+  try {
+    fs.mkdirSync(userDataPath(), { recursive: true });
+    fs.writeFileSync(settingsFile(), JSON.stringify(s, null, 2));
+    return true;
+  } catch (e) {
+    console.error('Failed to save settings:', e);
+    return false;
+  }
+}
+
+function loadUpdateHistory() {
+  try {
+    if (fs.existsSync(updateHistoryFile())) {
+      return JSON.parse(fs.readFileSync(updateHistoryFile(), 'utf-8'));
+    }
+  } catch (e) {
+    console.error('Failed to load update history:', e);
+  }
+  return [];
+}
+
+function appendUpdateHistory(entry) {
+  try {
+    const hist = loadUpdateHistory();
+    hist.push(entry);
+    // Keep last 50 entries max
+    while (hist.length > 50) hist.shift();
+    fs.mkdirSync(userDataPath(), { recursive: true });
+    fs.writeFileSync(updateHistoryFile(), JSON.stringify(hist, null, 2));
+  } catch (e) {
+    console.error('Failed to append update history:', e);
+  }
+}
+
+// ---------- Auto-updater wiring ----------
+function emitUpdateState() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('updates:state', updateState);
+  }
+}
+
+function setupAutoUpdater() {
+  autoUpdater.autoDownload = false;          // we control download timing
+  autoUpdater.autoInstallOnAppQuit = false;  // we honor user's auto-install toggle ourselves
+  autoUpdater.allowPrerelease = false;
+
+  autoUpdater.on('checking-for-update', () => {
+    updateState.status = 'checking';
+    updateState.error = null;
+    updateState.lastChecked = Date.now();
+    emitUpdateState();
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    updateState.status = 'available';
+    updateState.latestVersion = info.version;
+    updateState.releaseNotes = typeof info.releaseNotes === 'string' ? info.releaseNotes : (info.releaseNotes || null);
+    updateState.releaseName = info.releaseName || null;
+    updateState.releaseDate = info.releaseDate || null;
+    updateState.error = null;
+    emitUpdateState();
+
+    // Auto-download if user has auto-install enabled
+    const settings = loadSettings();
+    if (settings.autoInstall) {
+      autoUpdater.downloadUpdate().catch((err) => {
+        console.error('autoUpdater.downloadUpdate failed:', err);
+      });
+    }
+  });
+
+  autoUpdater.on('update-not-available', (info) => {
+    updateState.status = 'not-available';
+    updateState.latestVersion = info.version;
+    updateState.error = null;
+    emitUpdateState();
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    updateState.status = 'downloading';
+    updateState.downloadPercent = Math.round(progress.percent || 0);
+    emitUpdateState();
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    updateState.status = 'downloaded';
+    updateState.latestVersion = info.version;
+    updateState.downloadPercent = 100;
+    emitUpdateState();
+
+    appendUpdateHistory({
+      ts: Date.now(),
+      event: 'downloaded',
+      from: updateState.currentVersion,
+      to: info.version
+    });
+  });
+
+  autoUpdater.on('error', (err) => {
+    updateState.status = 'error';
+    updateState.error = err && err.message ? err.message : String(err);
+    emitUpdateState();
+  });
+}
+
+// On launch, if a previous run downloaded an update AND user has auto-install ON,
+// quitAndInstall() is the natural path. But since electron-updater stages the update
+// and applies it at quit-time, the simplest "install on next launch" flow is:
+// detect downloaded -> if autoInstall, prompt install at app ready.
+// We'll instead run a post-install detection: if running version differs from a
+// recorded "downloaded" entry, log the install in history.
+function reconcileInstallHistory() {
+  try {
+    const hist = loadUpdateHistory();
+    const last = hist.length ? hist[hist.length - 1] : null;
+    const currentVersion = app.getVersion();
+    if (last && last.event === 'downloaded' && last.to === currentVersion) {
+      appendUpdateHistory({
+        ts: Date.now(),
+        event: 'installed',
+        from: last.from || null,
+        to: currentVersion
+      });
+    }
+  } catch (e) {
+    console.error('reconcileInstallHistory failed:', e);
+  }
+}
 
 function loadProfilesFromDisk() {
   try {
@@ -229,6 +388,61 @@ ipcMain.handle('store:save', async (_evt, data) => {
   return saveProfilesToDisk(data);
 });
 
+// ---------- Updates IPC ----------
+ipcMain.handle('updates:status', async () => {
+  return {
+    ...updateState,
+    settings: loadSettings()
+  };
+});
+
+ipcMain.handle('updates:check', async () => {
+  try {
+    const r = await autoUpdater.checkForUpdates();
+    return { ok: true, info: r ? r.updateInfo : null };
+  } catch (err) {
+    updateState.status = 'error';
+    updateState.error = err && err.message ? err.message : String(err);
+    emitUpdateState();
+    return { ok: false, error: updateState.error };
+  }
+});
+
+ipcMain.handle('updates:download', async () => {
+  try {
+    await autoUpdater.downloadUpdate();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+});
+
+ipcMain.handle('updates:install', async () => {
+  // Quit and install. Prevents our before-quit handler from blocking via the silent flag.
+  try {
+    await disconnectClient();
+    setImmediate(() => autoUpdater.quitAndInstall(true, true));
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+});
+
+ipcMain.handle('updates:setAutoInstall', async (_evt, enabled) => {
+  const s = loadSettings();
+  s.autoInstall = !!enabled;
+  saveSettings(s);
+  return { ok: true, settings: s };
+});
+
+ipcMain.handle('updates:getHistory', async () => {
+  return loadUpdateHistory();
+});
+
+ipcMain.handle('app:getVersion', async () => {
+  return app.getVersion();
+});
+
 // Import / Export single profile
 ipcMain.handle('profile:export', async (_evt, profile) => {
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
@@ -262,10 +476,23 @@ ipcMain.handle('profile:import', async () => {
 });
 
 app.whenReady().then(() => {
+  updateState.currentVersion = app.getVersion();
+  reconcileInstallHistory();
+  setupAutoUpdater();
+
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+
+  // Silent check ~3s after launch. Skipped in dev (no published feed).
+  if (app.isPackaged) {
+    setTimeout(() => {
+      autoUpdater.checkForUpdates().catch((err) => {
+        console.warn('Initial update check failed:', err && err.message);
+      });
+    }, 3000);
+  }
 });
 
 app.on('window-all-closed', async () => {

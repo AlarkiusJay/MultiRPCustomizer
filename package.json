@@ -1,6 +1,6 @@
 {
   "name": "multirp",
-  "version": "1.0.6",
+  "version": "1.2.0",
   "description": "MultiRP — Multi-profile Discord Rich Presence manager. Up to 5 profiles, each with its own Client ID. Toggle one active at a time.",
   "main": "src/main/main.js",
   "author": {
@@ -18,7 +18,8 @@
     "build:all": "electron-builder -mwl"
   },
   "dependencies": {
-    "discord-rpc": "^4.0.1"
+    "discord-rpc": "^4.0.1",
+    "electron-updater": "^6.3.9"
   },
   "devDependencies": {
     "electron": "^31.0.0",
@@ -79,6 +80,14 @@
       "icon": "build/icon.png",
       "category": "Utility",
       "maintainer": "Alarkius Elvya Jay <alarkiusj2020@gmail.com>"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "AlarkiusJay",
+        "repo": "MultiRPCustomizer",
+        "releaseType": "release"
+      }
+    ]
   }
 }

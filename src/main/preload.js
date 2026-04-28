@@ -25,5 +25,23 @@ contextBridge.exposeInMainWorld('multirp', {
       }
     } catch (_) {}
     return Promise.resolve(false);
+  },
+
+  // App info
+  getVersion: () => ipcRenderer.invoke('app:getVersion'),
+
+  // Auto-updater bridge
+  updates: {
+    status: () => ipcRenderer.invoke('updates:status'),
+    check: () => ipcRenderer.invoke('updates:check'),
+    download: () => ipcRenderer.invoke('updates:download'),
+    install: () => ipcRenderer.invoke('updates:install'),
+    setAutoInstall: (enabled) => ipcRenderer.invoke('updates:setAutoInstall', enabled),
+    getHistory: () => ipcRenderer.invoke('updates:getHistory'),
+    onState: (cb) => {
+      const listener = (_e, state) => cb(state);
+      ipcRenderer.on('updates:state', listener);
+      return () => ipcRenderer.removeListener('updates:state', listener);
+    }
   }
 });
