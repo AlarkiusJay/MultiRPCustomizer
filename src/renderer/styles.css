@@ -106,7 +106,11 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   overflow-x: auto;
+  /* Hide scrollbar but keep horizontal scroll behavior intact */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* old Edge / IE */
 }
+.tabs::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .tab {
   display: flex;
   align-items: center;
@@ -157,6 +161,28 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
   padding: 0 2px;
 }
 .tab .tab-close:hover { color: var(--danger); }
+
+/* Drag-and-drop reorder */
+.tab { user-select: none; }
+.tab.dragging {
+  opacity: 0.45;
+  transform: scale(0.97);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.tab.drop-before::before,
+.tab.drop-after::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+.tab.drop-before::before { left: -3px; }
+.tab.drop-after::after { right: -3px; }
 
 /* The HTML `hidden` attribute must always win over our display: rules. */
 [hidden] { display: none !important; }
@@ -299,6 +325,26 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
   border: 2px solid var(--bg-1);
   background-size: cover;
   background-position: center;
+}
+.preview-large.has-image,
+.preview-small.has-image {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.preview-large.loading,
+.preview-small.loading {
+  position: relative;
+  overflow: hidden;
+}
+.preview-large.loading::after,
+.preview-small.loading::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+  animation: prevShimmer 1.2s linear infinite;
+}
+@keyframes prevShimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 .preview-text { flex: 1; min-width: 0; overflow: hidden; }
 .preview-app { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.4px; margin-bottom: 4px; }
