@@ -158,6 +158,9 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 }
 .tab .tab-close:hover { color: var(--danger); }
 
+/* The HTML `hidden` attribute must always win over our display: rules. */
+[hidden] { display: none !important; }
+
 /* Content */
 .content {
   flex: 1;
