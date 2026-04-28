@@ -6,6 +6,18 @@ Inspired by [CustomRP](https://www.customrp.xyz) — reimagined with **profile t
 
 ## ✨ Flagship Features
 
+### 🎨 Profile Themes — Discord-Nitro-Style Customization
+Every profile gets its **own custom theme** — accent color, hover color, surfaces, borders, text, and an optional gradient. The whole app re-skins the moment you activate that profile, like Nitro themes on steroids — except yours, fully editable, with live color pickers and a hex input for every slot. Built-in presets (Spiritual, Dragon, Ocean, Sakura) get you started; custom pickers let you go anywhere from there. **CustomRP has zero theming.**
+
+### 🌙 Idle Detection — Auto-Switch When You're Away
+MultiRP watches the OS lock-screen, system suspend, and (optionally) raw input idle time. When you go away, it snaps to your designated **Idle Profile**; the moment you come back, it returns to whatever was active before — instantly. Works with Discord's own Idle / DnD / Invisible status flow without conflicting with it.
+
+### 🎮 Game Detection + Always-On-Top Overlay
+MultiRP can scan your running processes (`tasklist` on Windows, `ps` on Mac/Linux) and **auto-activate a profile when a tracked game launches** — map `Genshin.exe → Genshin Impact profile`, `RobloxPlayerBeta.exe → Roblox profile`, and so on. Pair it with the **Always-On-Top overlay** (z-level `screen-saver`) so MultiRP floats above borderless-fullscreen games like a card stack — first in the stack, always reachable. Optional: only pin while a tracked game is actually running.
+
+### ⌨ Custom Hotkeys — Fully Customizable Globals
+Nine global shortcut actions you can bind to anything: **Cycle next profile**, **Jump to slots 1–5**, **Toggle Auto Presence**, **Show window**, **Toggle always-on-top**. Click-to-record capture, conflict detection, and CommandOrControl normalization so the same binding works on Mac, Windows, and Linux. Hotkeys fire even when MultiRP is hidden in the tray.
+
 ### ⚡ Auto Presence — Schedule, Rotate, or Shuffle
 A flagship that **CustomRP cannot do** because CustomRP only has one profile. With 5 profiles, MultiRP unlocks real automation. Pick a mode and let your presence run itself:
 
@@ -47,6 +59,11 @@ Discord deliberately hides your own buttons from your own profile card — you c
 - **Image keys** for Large + Small images (uploaded to Discord Dev Portal)
 - **Party size** indicator
 - **Auto Presence** — rotation, shuffle, or scheduled profile switching with custom intervals (seconds → days)
+- **Profile Themes** — per-profile accent / surface / gradient with presets and full custom color pickers
+- **Idle Detection** — auto-snap to an Idle profile on lock / suspend / idle, snap-back on activity
+- **Game Detection** — process scanner auto-activates profiles when tracked games launch
+- **Always-On-Top Overlay** — float MultiRP above games, with optional auto-pin only while a game is running
+- **Custom Hotkeys** — 9 global actions, click-to-record, conflict detection, cross-platform
 - **In-app update logs** with auto-update from GitHub Releases
 - **Dark grey UI**, no telemetry, no accounts, fully local
 - Auto-saves all profiles to disk
