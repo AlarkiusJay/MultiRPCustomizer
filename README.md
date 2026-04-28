@@ -1,6 +1,6 @@
 # MultiRP
 
-> Multi-Rich Presence Customizer for your Discord Presence. Up to 5 profiles, each with its own Client ID. Toggle one active at a time.
+> Multi-profile Discord Rich Presence manager. Up to 5 profiles, each with its own Client ID. Toggle one active at a time.
 
 Like [CustomRP](https://www.customrp.xyz), but with **profile tabs** so you can save multiple presence configs and switch between them with a click.
 
@@ -64,10 +64,4 @@ Licensed under the [Apache License 2.0](LICENSE).
 
 Copyright © 2026 Alarkius Elvya Jay.
 
-
 You may use, modify, and redistribute MultiRP — including in commercial projects — provided you keep the `LICENSE` and `NOTICE` files intact and clearly mark any modifications. The Apache 2.0 license also includes an explicit patent grant: contributors cannot sue downstream users over patent claims on their contributions.
-
-## Donations are Welcomed!
-[AlarkiusEJ's Ko-Fi](https://ko-fi.com/AlarkiusEJ)
-
-Donating at least a dollar or so can help this project stay alive! You also be helping the author out with different things and creative works. Fuel the dragon's caffeine addiction 🐉
