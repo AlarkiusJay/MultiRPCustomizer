@@ -49,6 +49,9 @@ let state = {
   view: 'profile',          // 'profile' | 'updates'
   updateState: null,        // last update state from main
   autoInstall: true,        // mirror of persisted setting
+  autoStart: false,         // launch at login
+  startMinimized: true,     // start hidden in tray
+  closeToTray: true,        // close hides instead of quits
   hasSeenLatestUpdate: true // false when an update arrives & we need a dot
 };
 
@@ -547,9 +550,53 @@ function setupUpdatesView() {
     refreshUpdateDot();
   });
 
+  // Startup & tray toggles
+  const setAutoStart = document.getElementById('setAutoStart');
+  const setStartMinimized = document.getElementById('setStartMinimized');
+  const setCloseToTray = document.getElementById('setCloseToTray');
+
+  function syncStartupToggleEnable() {
+    // "Start minimized to tray" only matters when auto-start is on.
+    setStartMinimized.disabled = !state.autoStart;
+    setStartMinimized.parentElement.style.opacity = state.autoStart ? '1' : '0.5';
+  }
+
+  setAutoStart.onchange = async () => {
+    state.autoStart = setAutoStart.checked;
+    syncStartupToggleEnable();
+    await window.multirp.settings.setAutoStart(setAutoStart.checked);
+  };
+  setStartMinimized.onchange = async () => {
+    state.startMinimized = setStartMinimized.checked;
+    await window.multirp.settings.setStartMinimized(setStartMinimized.checked);
+  };
+  setCloseToTray.onchange = async () => {
+    state.closeToTray = setCloseToTray.checked;
+    await window.multirp.settings.setCloseToTray(setCloseToTray.checked);
+  };
+
+  refreshStartupSettings = async function () {
+    try {
+      const s = await window.multirp.settings.get();
+      state.autoStart = !!s.autoStart;
+      state.startMinimized = !!s.startMinimized;
+      state.closeToTray = !!s.closeToTray;
+      setAutoStart.checked = state.autoStart;
+      setStartMinimized.checked = state.startMinimized;
+      setCloseToTray.checked = state.closeToTray;
+      syncStartupToggleEnable();
+    } catch (e) {
+      console.error('refreshStartupSettings failed:', e);
+    }
+  };
+
   // Pull initial state
   refreshUpdatesAll();
+  refreshStartupSettings();
 }
+
+// Forward-declared so renderUpdatesView/switchView can refresh on view enter.
+let refreshStartupSettings = async () => {};
 
 async function refreshUpdatesAll() {
   try {
@@ -620,6 +667,7 @@ function switchView(view) {
     state.hasSeenLatestUpdate = true;
     refreshUpdateDot();
     refreshUpdateHistory();
+    refreshStartupSettings();
   }
 }
 

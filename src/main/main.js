@@ -5,16 +5,23 @@
  * You may obtain a copy of the License at
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const RPC = require('discord-rpc');
 const { autoUpdater } = require('electron-updater');
 
 let mainWindow = null;
+let tray = null;               // system tray instance
 let activeClient = null;       // current discord-rpc Client
 let activeProfileId = null;    // which profile is currently active
 let activeActivity = null;     // last sent activity payload (for re-send)
+
+// True quit vs hide-to-tray. Set by tray Quit menu / explicit quit IPC.
+app.isQuitting = false;
+
+// True when the process was launched with --hidden (auto-start to tray).
+const startHidden = process.argv.includes('--hidden');
 
 // ---------- Auto-update state ----------
 // Persisted user setting: should we auto-install on next launch?
@@ -37,15 +44,23 @@ const profilesFile = () => path.join(userDataPath(), 'profiles.json');
 const settingsFile = () => path.join(userDataPath(), 'settings.json');
 const updateHistoryFile = () => path.join(userDataPath(), 'update-history.json');
 
+const DEFAULT_SETTINGS = {
+  autoInstall: true,       // auto-install updates on next launch
+  autoStart: false,        // launch MultiRP at system login
+  startMinimized: true,    // when auto-starting, start hidden in tray
+  closeToTray: true        // closing the window hides to tray instead of quitting
+};
+
 function loadSettings() {
   try {
     if (fs.existsSync(settingsFile())) {
-      return JSON.parse(fs.readFileSync(settingsFile(), 'utf-8'));
+      const raw = JSON.parse(fs.readFileSync(settingsFile(), 'utf-8'));
+      return { ...DEFAULT_SETTINGS, ...raw };
     }
   } catch (e) {
     console.error('Failed to load settings:', e);
   }
-  return { autoInstall: true }; // default: auto-install ON
+  return { ...DEFAULT_SETTINGS };
 }
 
 function saveSettings(s) {
@@ -218,6 +233,20 @@ function createWindow() {
 
   Menu.setApplicationMenu(null);
 
+  // Hide on close instead of quitting when closeToTray is enabled.
+  mainWindow.on('close', (e) => {
+    if (app.isQuitting) return;
+    const s = loadSettings();
+    if (s.closeToTray) {
+      e.preventDefault();
+      mainWindow.hide();
+      // macOS: also hide from dock so tray-only feel matches CustomRP
+      if (process.platform === 'darwin' && app.dock) {
+        try { app.dock.hide(); } catch (_) {}
+      }
+    }
+  });
+
   const indexPath = path.join(__dirname, '..', 'renderer', 'index.html');
   console.log('[MultiRP] Loading renderer from:', indexPath);
 
@@ -245,6 +274,19 @@ function createWindow() {
     console.error('[MultiRP] preload-error', preloadPath, err);
   });
 
+  // If we were launched hidden (auto-start to tray), don't show the window.
+  // Default Electron behavior is to show on first paint, so suppress that.
+  if (startHidden) {
+    mainWindow.once('ready-to-show', () => {
+      // Intentionally do not call show() — we live in the tray.
+      if (process.platform === 'darwin' && app.dock) {
+        try { app.dock.hide(); } catch (_) {}
+      }
+    });
+  } else {
+    mainWindow.once('ready-to-show', () => mainWindow.show());
+  }
+
   mainWindow.loadFile(indexPath).catch((err) => {
     console.error('[MultiRP] loadFile threw:', err);
   });
@@ -255,6 +297,147 @@ function createWindow() {
   }
 
   mainWindow.on('closed', () => { mainWindow = null; });
+}
+
+// ---------- System tray ----------
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (process.platform === 'darwin' && app.dock) {
+    try { app.dock.show(); } catch (_) {}
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function loadProfilesForTray() {
+  const data = loadProfilesFromDisk();
+  if (data && Array.isArray(data.profiles)) return data.profiles;
+  return [];
+}
+
+function buildTrayMenu() {
+  const profiles = loadProfilesForTray();
+  const items = [
+    {
+      label: 'Show MultiRP',
+      click: () => showMainWindow()
+    },
+    { type: 'separator' }
+  ];
+
+  if (profiles.length > 0) {
+    profiles.forEach((p) => {
+      const label = p && p.name ? p.name : 'Untitled Profile';
+      items.push({
+        label: `Activate: ${label}`,
+        type: 'checkbox',
+        checked: activeProfileId === p.id,
+        click: () => {
+          // Run async without blocking the menu callback
+          (async () => {
+            try {
+              await connectProfile(p);
+              rebuildTrayMenu();
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('rpc:activeChanged', { activeProfileId });
+              }
+            } catch (e) {
+              console.error('Tray activate failed:', e);
+            }
+          })();
+        }
+      });
+    });
+  } else {
+    items.push({ label: 'No profiles yet', enabled: false });
+  }
+
+  items.push(
+    { type: 'separator' },
+    {
+      label: 'Deactivate',
+      enabled: !!activeClient,
+      click: () => {
+        (async () => {
+          await disconnectClient();
+          rebuildTrayMenu();
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('rpc:activeChanged', { activeProfileId: null });
+          }
+        })();
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit MultiRP',
+      click: () => {
+        app.isQuitting = true;
+        app.quit();
+      }
+    }
+  );
+
+  return Menu.buildFromTemplate(items);
+}
+
+function rebuildTrayMenu() {
+  if (!tray || tray.isDestroyed()) return;
+  try {
+    tray.setContextMenu(buildTrayMenu());
+  } catch (e) {
+    console.error('rebuildTrayMenu failed:', e);
+  }
+}
+
+function setupTray() {
+  if (tray) return;
+  try {
+    const iconPath = path.join(__dirname, 'tray-icon.png');
+    let image = nativeImage.createFromPath(iconPath);
+    if (image.isEmpty()) {
+      // Fallback to brand logo if tray icon missing for any reason
+      image = nativeImage.createFromPath(path.join(__dirname, '..', 'renderer', 'logo.png'));
+    }
+    // macOS prefers small template-style icons
+    if (process.platform === 'darwin' && !image.isEmpty()) {
+      image = image.resize({ width: 18, height: 18 });
+    }
+    tray = new Tray(image);
+    tray.setToolTip('MultiRP — Discord Rich Presence');
+    tray.setContextMenu(buildTrayMenu());
+
+    // Left-click on Windows/Linux toggles the window; macOS uses the menu.
+    tray.on('click', () => {
+      if (process.platform === 'darwin') return;
+      if (mainWindow && mainWindow.isVisible() && !mainWindow.isMinimized()) {
+        mainWindow.hide();
+      } else {
+        showMainWindow();
+      }
+    });
+    tray.on('double-click', () => showMainWindow());
+  } catch (e) {
+    console.error('Failed to set up tray:', e);
+  }
+}
+
+// ---------- Login item (auto-start) ----------
+function applyLoginItemSettings(settings) {
+  // Skip in dev — Electron binary path makes no sense as a login item there.
+  if (!app.isPackaged) return;
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: !!settings.autoStart,
+      openAsHidden: !!settings.startMinimized, // macOS uses this hint
+      args: settings.startMinimized ? ['--hidden'] : []
+    });
+  } catch (e) {
+    console.error('setLoginItemSettings failed:', e);
+  }
 }
 
 // Build the activity payload from a profile object
@@ -319,14 +502,14 @@ async function disconnectClient() {
   }
 }
 
-ipcMain.handle('rpc:connect', async (_evt, profile) => {
-  // Disconnect any existing connection first (one active profile at a time)
+// Shared connect implementation — used by both the renderer IPC and the tray menu.
+async function connectProfile(profile) {
   await disconnectClient();
 
   if (!profile || !profile.clientId) {
     return { ok: false, error: 'Missing Client ID' };
   }
-  if (!/^\d{17,21}$/.test(profile.clientId.trim())) {
+  if (!/^\d{17,21}$/.test(String(profile.clientId).trim())) {
     return { ok: false, error: 'Client ID must be 17–21 digits (snowflake)' };
   }
 
@@ -334,8 +517,7 @@ ipcMain.handle('rpc:connect', async (_evt, profile) => {
     const client = new RPC.Client({ transport: 'ipc' });
     const activity = buildActivity(profile);
 
-    // login() resolves once the local Discord client accepts the handshake
-    await client.login({ clientId: profile.clientId.trim() });
+    await client.login({ clientId: String(profile.clientId).trim() });
     await client.setActivity(activity);
 
     activeClient = client;
@@ -346,17 +528,25 @@ ipcMain.handle('rpc:connect', async (_evt, profile) => {
       activeClient = null;
       activeProfileId = null;
       activeActivity = null;
-      if (mainWindow) mainWindow.webContents.send('rpc:disconnected');
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('rpc:disconnected');
+      rebuildTrayMenu();
     });
 
     return { ok: true, activeProfileId: profile.id };
   } catch (err) {
     return { ok: false, error: err.message || String(err) };
   }
+}
+
+ipcMain.handle('rpc:connect', async (_evt, profile) => {
+  const r = await connectProfile(profile);
+  rebuildTrayMenu();
+  return r;
 });
 
 ipcMain.handle('rpc:disconnect', async () => {
   await disconnectClient();
+  rebuildTrayMenu();
   return { ok: true };
 });
 
@@ -385,7 +575,43 @@ ipcMain.handle('store:load', async () => {
 });
 
 ipcMain.handle('store:save', async (_evt, data) => {
-  return saveProfilesToDisk(data);
+  const ok = saveProfilesToDisk(data);
+  // Profiles changed — refresh tray menu so per-profile entries stay current.
+  rebuildTrayMenu();
+  return ok;
+});
+
+// ---------- Settings IPC (startup + tray) ----------
+ipcMain.handle('settings:get', async () => {
+  return loadSettings();
+});
+
+ipcMain.handle('settings:setAutoStart', async (_evt, enabled) => {
+  const s = loadSettings();
+  s.autoStart = !!enabled;
+  saveSettings(s);
+  applyLoginItemSettings(s);
+  return { ok: true, settings: s };
+});
+
+ipcMain.handle('settings:setStartMinimized', async (_evt, enabled) => {
+  const s = loadSettings();
+  s.startMinimized = !!enabled;
+  saveSettings(s);
+  applyLoginItemSettings(s);
+  return { ok: true, settings: s };
+});
+
+ipcMain.handle('settings:setCloseToTray', async (_evt, enabled) => {
+  const s = loadSettings();
+  s.closeToTray = !!enabled;
+  saveSettings(s);
+  return { ok: true, settings: s };
+});
+
+ipcMain.handle('window:show', async () => {
+  showMainWindow();
+  return { ok: true };
 });
 
 // ---------- Updates IPC ----------
@@ -480,9 +706,14 @@ app.whenReady().then(() => {
   reconcileInstallHistory();
   setupAutoUpdater();
 
+  // Reconcile login item with persisted setting so user's preference survives reinstalls.
+  applyLoginItemSettings(loadSettings());
+
+  setupTray();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    showMainWindow();
   });
 
   // Silent check ~3s after launch. Skipped in dev (no published feed).
@@ -496,14 +727,25 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', async () => {
+  // With tray support, we stay alive until the user explicitly quits via the tray menu.
+  // Only fall back to the legacy quit-on-last-window behavior if we are quitting for real.
+  if (!app.isQuitting) return;
   await disconnectClient();
   if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', async (e) => {
+  app.isQuitting = true;
   if (activeClient) {
     e.preventDefault();
     await disconnectClient();
     app.quit();
+  }
+});
+
+app.on('will-quit', () => {
+  if (tray && !tray.isDestroyed()) {
+    try { tray.destroy(); } catch (_) {}
+    tray = null;
   }
 });

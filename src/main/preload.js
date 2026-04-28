@@ -7,6 +7,11 @@ contextBridge.exposeInMainWorld('multirp', {
   update: (profile) => ipcRenderer.invoke('rpc:update', profile),
   status: () => ipcRenderer.invoke('rpc:status'),
   onDisconnected: (cb) => ipcRenderer.on('rpc:disconnected', cb),
+  onActiveChanged: (cb) => {
+    const listener = (_e, payload) => cb(payload);
+    ipcRenderer.on('rpc:activeChanged', listener);
+    return () => ipcRenderer.removeListener('rpc:activeChanged', listener);
+  },
 
   // Persistence
   loadStore: () => ipcRenderer.invoke('store:load'),
@@ -29,6 +34,14 @@ contextBridge.exposeInMainWorld('multirp', {
 
   // App info
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
+
+  // Startup / tray settings bridge
+  settings: {
+    get: () => ipcRenderer.invoke('settings:get'),
+    setAutoStart: (enabled) => ipcRenderer.invoke('settings:setAutoStart', enabled),
+    setStartMinimized: (enabled) => ipcRenderer.invoke('settings:setStartMinimized', enabled),
+    setCloseToTray: (enabled) => ipcRenderer.invoke('settings:setCloseToTray', enabled)
+  },
 
   // Auto-updater bridge
   updates: {

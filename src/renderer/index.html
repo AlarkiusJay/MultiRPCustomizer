@@ -226,6 +226,45 @@
           </ul>
         </div>
 
+        <div class="updates-section">
+          <div class="updates-section-header">Startup &amp; Tray</div>
+          <div class="startup-rows">
+            <div class="startup-row">
+              <div class="startup-row-text">
+                <div class="startup-row-title">Launch MultiRP at startup</div>
+                <div class="startup-row-desc">Open MultiRP automatically when you log in to your computer.</div>
+              </div>
+              <label class="updates-toggle">
+                <input type="checkbox" id="setAutoStart" />
+                <span class="updates-toggle-track"><span class="updates-toggle-thumb"></span></span>
+              </label>
+            </div>
+            <div class="startup-row">
+              <div class="startup-row-text">
+                <div class="startup-row-title">Start minimized to tray</div>
+                <div class="startup-row-desc">When auto-starting, run quietly in the system tray instead of opening the window.</div>
+              </div>
+              <label class="updates-toggle">
+                <input type="checkbox" id="setStartMinimized" />
+                <span class="updates-toggle-track"><span class="updates-toggle-thumb"></span></span>
+              </label>
+            </div>
+            <div class="startup-row">
+              <div class="startup-row-text">
+                <div class="startup-row-title">Close to tray</div>
+                <div class="startup-row-desc">Closing the window keeps MultiRP running in the tray. Use the tray menu to fully quit.</div>
+              </div>
+              <label class="updates-toggle">
+                <input type="checkbox" id="setCloseToTray" />
+                <span class="updates-toggle-track"><span class="updates-toggle-thumb"></span></span>
+              </label>
+            </div>
+          </div>
+          <div class="startup-note">
+            On Linux, the tray icon depends on your desktop environment — GNOME may need an AppIndicator extension.
+          </div>
+        </div>
+
         <div class="updates-footer-note">
           MultiRP checks GitHub Releases at <a href="#" id="updRepoLink">AlarkiusJay/MultiRPCustomizer</a> on launch. Auto-install is on by default — toggle off to stay on your current version.
         </div>
@@ -233,7 +272,7 @@
     </main>
 
     <footer class="footer">
-      <span id="footerVersion">v1.2.0 · Built by Alarkius Elvya Jay</span>
+      <span id="footerVersion">v1.3.0 · Built by Alarkius Elvya Jay</span>
       <span class="footer-right">
         <a href="#" id="openHelp">Help &amp; Setup Guide</a>
       </span>
