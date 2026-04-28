@@ -438,17 +438,41 @@ async function init() {
     }
   };
 
+  // ---------- Help modal (dark themed) ----------
+  const helpModal = document.getElementById('helpModal');
+  const helpClose = document.getElementById('helpModalClose');
+  const helpOk = document.getElementById('helpModalOk');
+  const helpDevPortal = document.getElementById('helpDevPortal');
+
+  const openHelpModal = () => {
+    helpModal.hidden = false;
+    // Focus the OK button for keyboard users
+    setTimeout(() => helpOk && helpOk.focus(), 50);
+  };
+  const closeHelpModal = () => { helpModal.hidden = true; };
+
   document.getElementById('openHelp').onclick = (e) => {
     e.preventDefault();
-    alert(
-      'MultiRP Quick Start:\n\n' +
-      '1. Go to https://discord.com/developers/applications and create an app per profile.\n' +
-      '2. Copy the Application (Client) ID into the profile field.\n' +
-      '3. (Optional) Upload images under Rich Presence → Art Assets, then use the asset name as the Image Key.\n' +
-      '4. Fill Details/State, add up to 2 buttons.\n' +
-      '5. Click Activate. Discord must be open on your computer.\n\n' +
-      'Buttons are clickable for OTHER users only — that is a Discord limit, not a bug.'
-    );
+    openHelpModal();
+  };
+  helpClose.onclick = closeHelpModal;
+  helpOk.onclick = closeHelpModal;
+  // Click outside modal to dismiss
+  helpModal.addEventListener('click', (e) => {
+    if (e.target === helpModal) closeHelpModal();
+  });
+  // Escape to dismiss
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !helpModal.hidden) closeHelpModal();
+  });
+  // Dev Portal link inside modal
+  helpDevPortal.onclick = (e) => {
+    e.preventDefault();
+    if (window.multirp && typeof window.multirp.openExternal === 'function') {
+      window.multirp.openExternal('https://discord.com/developers/applications');
+    } else {
+      try { window.open('https://discord.com/developers/applications', '_blank'); } catch {}
+    }
   };
 
   window.multirp.onDisconnected(() => {

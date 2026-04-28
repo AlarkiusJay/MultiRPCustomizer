@@ -341,3 +341,109 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
   .row { grid-template-columns: 1fr; }
   .preview-card { position: static; }
 }
+
+/* ---------- Modal (dark) ---------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  animation: fadeIn 120ms ease-out;
+}
+.modal-overlay[hidden] { display: none; }
+
+.modal {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: min(520px, 92vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  animation: scaleIn 140ms ease-out;
+  color: var(--text);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.2px;
+}
+.modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  transition: background 120ms, color 120ms;
+}
+.modal-close:hover { background: var(--bg-3); color: var(--text); }
+
+.modal-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.modal-body a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.modal-body a:hover { color: var(--accent-hover); text-decoration: underline; }
+.modal-body b { color: var(--text); font-weight: 600; }
+.modal-body i { color: var(--text-dim); font-style: italic; }
+
+.help-list {
+  margin: 0 0 12px 0;
+  padding-left: 20px;
+}
+.help-list li {
+  margin-bottom: 8px;
+  color: var(--text);
+}
+.help-list li::marker { color: var(--accent); font-weight: 600; }
+
+.help-note {
+  margin: 12px 0 0 0;
+  padding: 10px 12px;
+  background: var(--bg-3);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+
+.modal-footer {
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}

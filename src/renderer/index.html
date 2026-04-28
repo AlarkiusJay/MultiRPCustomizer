@@ -170,11 +170,34 @@
     </main>
 
     <footer class="footer">
-      <span>v1.0.5 · Built by Alarkius Elvya Jay</span>
+      <span>v1.0.6 · Built by Alarkius Elvya Jay</span>
       <span class="footer-right">
         <a href="#" id="openHelp">Help &amp; Setup Guide</a>
       </span>
     </footer>
+  </div>
+
+  <!-- Help modal (dark themed) -->
+  <div class="modal-overlay" id="helpModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="helpModalTitle">
+      <div class="modal-header">
+        <h3 id="helpModalTitle">MultiRP Quick Start</h3>
+        <button class="modal-close" id="helpModalClose" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <ol class="help-list">
+          <li>Open the <a href="#" id="helpDevPortal">Discord Developer Portal</a> and create an Application per profile.</li>
+          <li>Copy the <b>Application (Client) ID</b> into the profile field.</li>
+          <li><i>(Optional)</i> Upload images under <b>Rich Presence → Art Assets</b>, then use the asset name as the Image Key.</li>
+          <li>Fill <b>Details</b> and <b>State</b>, add up to 2 buttons.</li>
+          <li>Click <b>Activate</b>. Discord must be open on your computer.</li>
+        </ol>
+        <p class="help-note">Buttons are clickable for <b>other users only</b> — that is a Discord limit, not a bug.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="helpModalOk">Got it</button>
+      </div>
+    </div>
   </div>
 
   <script src="renderer.js"></script>
