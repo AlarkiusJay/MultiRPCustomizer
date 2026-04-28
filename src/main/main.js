@@ -10,6 +10,7 @@ const path = require('path');
 const fs = require('fs');
 const RPC = require('discord-rpc');
 const { autoUpdater } = require('electron-updater');
+const profileFormats = require('./profile-formats');
 
 let mainWindow = null;
 let tray = null;               // system tray instance
@@ -669,17 +670,30 @@ ipcMain.handle('app:getVersion', async () => {
   return app.getVersion();
 });
 
-// Import / Export single profile
+// Import / Export single profile — multi-format with CustomRP (.crp) interop.
+// Supported on export: .json (MultiRP native), .crp (CustomRP XML), .csv, .md, .txt.
+// Supported on import: same set, format auto-detected from extension and content.
 ipcMain.handle('profile:export', async (_evt, profile) => {
+  const safeName = (profile.name || 'profile').replace(/[^a-z0-9-_]/gi, '_');
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
     title: 'Export Profile',
-    defaultPath: `${(profile.name || 'profile').replace(/[^a-z0-9-_]/gi, '_')}.multirp.json`,
-    filters: [{ name: 'MultiRP Profile', extensions: ['json'] }]
+    defaultPath: `${safeName}.multirp.json`,
+    filters: [
+      { name: 'MultiRP Profile (JSON)', extensions: ['json'] },
+      { name: 'CustomRP Preset (.crp)', extensions: ['crp'] },
+      { name: 'Markdown', extensions: ['md'] },
+      { name: 'CSV', extensions: ['csv'] },
+      { name: 'Plain Text', extensions: ['txt'] },
+      { name: 'All Files', extensions: ['*'] }
+    ]
   });
   if (canceled || !filePath) return { ok: false, canceled: true };
   try {
-    fs.writeFileSync(filePath, JSON.stringify(profile, null, 2));
-    return { ok: true, filePath };
+    const ext = path.extname(filePath).slice(1).toLowerCase();
+    const format = profileFormats.formatFromExtension(ext);
+    const content = profileFormats.exportToString(profile, format);
+    fs.writeFileSync(filePath, content, 'utf-8');
+    return { ok: true, filePath, format };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -688,14 +702,23 @@ ipcMain.handle('profile:export', async (_evt, profile) => {
 ipcMain.handle('profile:import', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
     title: 'Import Profile',
-    filters: [{ name: 'MultiRP Profile', extensions: ['json'] }],
+    filters: [
+      { name: 'Profile Files', extensions: ['json', 'crp', 'csv', 'md', 'markdown', 'txt', 'xml'] },
+      { name: 'MultiRP Profile (JSON)', extensions: ['json'] },
+      { name: 'CustomRP Preset (.crp)', extensions: ['crp', 'xml'] },
+      { name: 'Markdown', extensions: ['md', 'markdown'] },
+      { name: 'CSV', extensions: ['csv'] },
+      { name: 'Plain Text', extensions: ['txt'] },
+      { name: 'All Files', extensions: ['*'] }
+    ],
     properties: ['openFile']
   });
   if (canceled || !filePaths || filePaths.length === 0) return { ok: false, canceled: true };
   try {
-    const raw = fs.readFileSync(filePaths[0], 'utf-8');
-    const profile = JSON.parse(raw);
-    return { ok: true, profile };
+    const filePath = filePaths[0];
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    const { profile, format } = profileFormats.importFromContent(filePath, raw);
+    return { ok: true, profile, format, filePath };
   } catch (e) {
     return { ok: false, error: e.message };
   }

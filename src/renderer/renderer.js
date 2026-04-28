@@ -391,6 +391,20 @@ async function importProfile() {
   renderForm();
   renderTabs();
   saveStore();
+
+  // Friendly toast: tell the user which format was detected.
+  const fmt = result.format;
+  const labels = {
+    crp: 'CustomRP preset (.crp)',
+    json: 'MultiRP profile (JSON)',
+    csv: 'CSV',
+    markdown: 'Markdown',
+    txt: 'plain text'
+  };
+  if (fmt && labels[fmt]) {
+    showError(`Imported ${labels[fmt]} into this tab.`);
+    setTimeout(() => showError(''), 4000);
+  }
 }
 
 function resetProfile() {
@@ -489,6 +503,18 @@ async function init() {
       try { window.open('https://discord.com/developers/applications', '_blank'); } catch {}
     }
   };
+  // CustomRP inspiration link
+  const helpCustomrpLink = document.getElementById('helpCustomrpLink');
+  if (helpCustomrpLink) {
+    helpCustomrpLink.onclick = (e) => {
+      e.preventDefault();
+      if (window.multirp && typeof window.multirp.openExternal === 'function') {
+        window.multirp.openExternal('https://www.customrp.xyz');
+      } else {
+        try { window.open('https://www.customrp.xyz', '_blank'); } catch {}
+      }
+    };
+  }
 
   window.multirp.onDisconnected(() => {
     state.liveProfileId = null;
