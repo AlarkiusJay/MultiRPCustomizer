@@ -1,11 +1,11 @@
 {
   "name": "multirp",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "MultiRP — Multi-profile Discord Rich Presence manager. Up to 5 profiles, each with its own Client ID. Toggle one active at a time.",
   "main": "src/main/main.js",
   "author": {
     "name": "Alarkius Elvya Jay",
-    "email": "alarkiusej@proton.me"
+    "email": "alarkiusj2020@gmail.com"
   },
   "license": "Apache-2.0",
   "scripts": {
@@ -34,10 +34,16 @@
     },
     "asar": true,
     "files": [
+      "src/main/**/*",
+      "src/renderer/**/*",
       "src/**/*",
       "package.json",
-      "!**/*.map"
+      "!**/*.map",
+      "!**/.DS_Store"
     ],
+    "extraMetadata": {
+      "main": "src/main/main.js"
+    },
     "win": {
       "target": [
         {
