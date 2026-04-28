@@ -4,18 +4,18 @@
 
 Inspired by [CustomRP](https://www.customrp.xyz) — reimagined with **profile tabs**, **system tray + auto-start**, and **drop-in compatibility with your existing CustomRP `.crp` presets**. Switch between presences with a single click. No accounts, no telemetry, fully local.
 
-## ✨ Flagship Features
+## Flagship Features
 
-### 🔁 CustomRP File Compatibility
+### CustomRP File Compatibility
 MultiRP reads and writes **CustomRP's native `.crp` format** — drag your existing presets straight in, no conversion step. Export back to `.crp` and hand them to friends still on CustomRP. Also supports **`.json`** (MultiRP native), **`.csv`**, **`.md`**, and **`.txt`** — with smart format detection by both file extension *and* content sniffing, so renamed files still work.
 
-### 🗂️ Multi-Profile Tabs
+### Multi-Profile Tabs
 Up to **5 profiles**, each with its own Discord Application Client ID. Toggle which one is live with a single click — perfect for creators juggling multiple personas, projects, or moods.
 
-### 🚀 Auto-Start & System Tray
+### Auto-Start & System Tray
 Launch with your OS, start minimized to the tray, and right-click the tray icon to activate/deactivate any profile without opening the window. Behaves like a real desktop app, not a tab you forgot about.
 
-### 🎨 Live Editing
+### Live Editing
 Live preview while you type, live push to Discord without disconnecting, and live character counters that respect Discord's hard 128-char and 32-char-button limits.
 
 ## Full Feature List
