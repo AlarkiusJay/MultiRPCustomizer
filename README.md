@@ -6,6 +6,15 @@ Inspired by [CustomRP](https://www.customrp.xyz) — reimagined with **profile t
 
 ## ✨ Flagship Features
 
+### ⚡ Auto Presence — Schedule, Rotate, or Shuffle
+A flagship that **CustomRP cannot do** because CustomRP only has one profile. With 5 profiles, MultiRP unlocks real automation. Pick a mode and let your presence run itself:
+
+- **🔄 Rotation** — cycle through selected profiles in a custom order on any interval (seconds, minutes, hours, **or days**)
+- **🎲 Shuffle** — pick a random profile from your selected set on each interval
+- **📅 Schedule** — activate specific profiles on specific days and times of week (e.g. "Streaming" Mon–Fri 19:00–23:00, "Work" weekdays 09:00–17:00)
+
+Manual activation politely pauses the engine with a one-click **Resume Auto** affordance. Optional system notifications when switches happen. Drag-to-reorder rotation. Live next-switch countdown. Set it once and forget it.
+
 ### 🔁 CustomRP File Compatibility
 MultiRP reads and writes **CustomRP's native `.crp` format** — drag your existing presets straight in, no conversion step. Export back to `.crp` and hand them to friends still on CustomRP. Also supports **`.json`** (MultiRP native), **`.csv`**, **`.md`**, and **`.txt`** — with smart format detection by both file extension *and* content sniffing, so renamed files still work.
 
@@ -37,6 +46,7 @@ Discord deliberately hides your own buttons from your own profile card — you c
 - **Timestamps**: none / elapsed (auto-start) / custom start / custom range
 - **Image keys** for Large + Small images (uploaded to Discord Dev Portal)
 - **Party size** indicator
+- **Auto Presence** — rotation, shuffle, or scheduled profile switching with custom intervals (seconds → days)
 - **In-app update logs** with auto-update from GitHub Releases
 - **Dark grey UI**, no telemetry, no accounts, fully local
 - Auto-saves all profiles to disk

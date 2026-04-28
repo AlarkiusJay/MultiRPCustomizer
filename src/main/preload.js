@@ -63,6 +63,17 @@ contextBridge.exposeInMainWorld('multirp', {
     setCloseToTray: (enabled) => ipcRenderer.invoke('settings:setCloseToTray', enabled)
   },
 
+  // Auto Presence bridge (v1.6.0)
+  auto: {
+    get: () => ipcRenderer.invoke('auto:get'),
+    set: (cfg) => ipcRenderer.invoke('auto:set', cfg),
+    onStatus: (cb) => {
+      const listener = (_e, status) => cb(status);
+      ipcRenderer.on('auto:status', listener);
+      return () => ipcRenderer.removeListener('auto:status', listener);
+    }
+  },
+
   // Auto-updater bridge
   updates: {
     status: () => ipcRenderer.invoke('updates:status'),

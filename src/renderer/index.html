@@ -25,6 +25,11 @@
     <nav class="tabs-bar">
       <div class="tabs" id="tabs"></div>
       <div class="tabs-spacer"></div>
+      <div class="tab-utility" id="autoTab" title="Auto Presence — schedule profile switches">
+        <span class="tab-utility-icon" aria-hidden="true">⚡</span>
+        <span>Auto Presence</span>
+        <span class="auto-dot" id="autoDot" hidden title="Auto Presence is running"></span>
+      </div>
       <div class="tab-utility" id="updatesTab" title="Update Logs">
         <span class="tab-utility-icon" aria-hidden="true">↻</span>
         <span>Update Logs</span>
@@ -281,8 +286,129 @@
       </section>
     </main>
 
+    <!-- ===== Auto Presence view ===== -->
+    <main class="content updates-view" id="viewAuto" hidden>
+      <section class="updates-card">
+        <div class="updates-header">
+          <h2>⚡ Auto Presence</h2>
+          <span class="updates-subtitle">Schedule MultiRP to switch profiles automatically. Unique to MultiRP — because only multi-profile apps can do this.</span>
+        </div>
+
+        <!-- Master toggle -->
+        <div class="auto-master-row">
+          <div class="auto-master-text">
+            <div class="auto-master-title">Auto Presence Engine</div>
+            <div class="auto-master-status" id="autoStatusLine">Stopped — manual control</div>
+          </div>
+          <button class="btn primary" id="autoToggleBtn">Start Auto Presence</button>
+        </div>
+        <div class="auto-paused-banner" id="autoPausedBanner" hidden>
+          <span>⏸ Auto paused after manual switch.</span>
+          <button class="btn secondary small" id="autoResumeBtn">Resume Auto</button>
+        </div>
+
+        <!-- Mode picker -->
+        <div class="updates-section">
+          <div class="updates-section-header">Mode</div>
+          <div class="auto-modes">
+            <label class="auto-mode-card">
+              <input type="radio" name="autoMode" value="rotation" checked />
+              <div class="auto-mode-body">
+                <div class="auto-mode-title">🔄 Rotation</div>
+                <div class="auto-mode-desc">Cycle through selected profiles in order on a fixed interval.</div>
+              </div>
+            </label>
+            <label class="auto-mode-card">
+              <input type="radio" name="autoMode" value="shuffle" />
+              <div class="auto-mode-body">
+                <div class="auto-mode-title">🎲 Shuffle</div>
+                <div class="auto-mode-desc">Pick a random profile from the selected set on each interval.</div>
+              </div>
+            </label>
+            <label class="auto-mode-card">
+              <input type="radio" name="autoMode" value="schedule" />
+              <div class="auto-mode-body">
+                <div class="auto-mode-title">📅 Schedule</div>
+                <div class="auto-mode-desc">Activate specific profiles at specific days &amp; times of week.</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Rotation/Shuffle interval config -->
+        <div class="updates-section" id="autoIntervalSection">
+          <div class="updates-section-header">Interval</div>
+          <div class="auto-interval-row">
+            <span class="auto-interval-prefix">Switch every</span>
+            <input type="number" id="autoIntervalValue" min="1" step="1" value="30" class="auto-interval-input" />
+            <select id="autoIntervalUnit" class="auto-interval-unit">
+              <option value="seconds">seconds</option>
+              <option value="minutes" selected>minutes</option>
+              <option value="hours">hours</option>
+              <option value="days">days</option>
+            </select>
+          </div>
+          <div class="auto-interval-hint" id="autoIntervalHint">Effective interval: 30 minutes</div>
+        </div>
+
+        <!-- Profile selection (rotation/shuffle) -->
+        <div class="updates-section" id="autoProfilePickerSection">
+          <div class="updates-section-header">Profiles to Cycle</div>
+          <div class="auto-profile-list" id="autoProfileList">
+            <!-- Populated dynamically -->
+          </div>
+          <div class="auto-profile-hint">Pick at least 2 profiles. Drag the handle to reorder rotation order.</div>
+        </div>
+
+        <!-- Schedule rules -->
+        <div class="updates-section" id="autoScheduleSection" hidden>
+          <div class="updates-section-header">Schedule Rules</div>
+          <div class="auto-schedule-list" id="autoScheduleList"></div>
+          <button class="btn secondary small" id="autoAddRuleBtn">+ Add Rule</button>
+          <div class="auto-profile-hint">Rules are evaluated top to bottom. The first matching rule wins. If nothing matches, MultiRP keeps the last active profile.</div>
+        </div>
+
+        <!-- Notification toggle -->
+        <div class="updates-section">
+          <div class="updates-section-header">Behavior</div>
+          <div class="startup-rows">
+            <div class="startup-row">
+              <div class="startup-row-text">
+                <div class="startup-row-title">Notify on switch</div>
+                <div class="startup-row-desc">Show a brief toast when Auto Presence switches profiles. Off by default.</div>
+              </div>
+              <label class="updates-toggle">
+                <input type="checkbox" id="autoNotifyToggle" />
+                <span class="updates-toggle-track"><span class="updates-toggle-thumb"></span></span>
+              </label>
+            </div>
+            <div class="startup-row">
+              <div class="startup-row-text">
+                <div class="startup-row-title">Pause when I activate manually</div>
+                <div class="startup-row-desc">If you click Activate on a profile, Auto Presence pauses. A Resume button appears here. Recommended.</div>
+              </div>
+              <label class="updates-toggle">
+                <input type="checkbox" id="autoPauseOnManual" checked />
+                <span class="updates-toggle-track"><span class="updates-toggle-thumb"></span></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Next switch indicator -->
+        <div class="updates-section" id="autoNextSection" hidden>
+          <div class="updates-section-header">Up Next</div>
+          <div class="auto-next" id="autoNextLine">—</div>
+        </div>
+
+        <div class="updates-footer-note">
+          ✨ <b>Why this matters:</b> CustomRP and most Rich Presence tools only support one profile at a time, so they can't automate profile switching. MultiRP's 5-profile model makes this possible — set up a writer profile for work hours, a streaming profile for evenings, a chaos shuffle for weekends, whatever fits your life.
+        </div>
+      </section>
+    </main>
+
     <footer class="footer">
-      <span id="footerVersion">v1.5.0 · Built by Alarkius Elvya Jay</span>
+      <span id="footerVersion">v1.6.0 · Built by Alarkius Elvya Jay</span>
       <span class="footer-right">
         <a href="#" id="openHelp">Help &amp; Setup Guide</a>
       </span>

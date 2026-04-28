@@ -46,7 +46,7 @@ let state = {
   profiles: [newProfile(1)],
   activeTab: 0,
   liveProfileId: null,
-  view: 'profile',          // 'profile' | 'updates'
+  view: 'profile',          // 'profile' | 'updates' | 'auto'
   updateState: null,        // last update state from main
   autoInstall: true,        // mirror of persisted setting
   autoStart: false,         // launch at login
@@ -188,7 +188,7 @@ function reorderProfiles(from, to) {
 }
 
 function switchTab(i) {
-  if (state.view === 'updates') switchView('profile');
+  if (state.view === 'updates' || state.view === 'auto') switchView('profile');
   state.activeTab = i;
   renderForm();
   renderTabs();
@@ -197,7 +197,7 @@ function switchTab(i) {
 
 function addProfile() {
   if (state.profiles.length >= MAX_PROFILES) return;
-  if (state.view === 'updates') switchView('profile');
+  if (state.view === 'updates' || state.view === 'auto') switchView('profile');
   state.profiles.push(newProfile(state.profiles.length + 1));
   state.activeTab = state.profiles.length - 1;
   renderTabs();
@@ -719,6 +719,9 @@ async function init() {
   // Updates wiring
   setupUpdatesView();
 
+  // Auto Presence wiring
+  setupAutoPresenceView();
+
   document.getElementById('openDevPortal').onclick = (e) => {
     e.preventDefault();
     // Renderer is context-isolated so `require` is unavailable here.
@@ -818,6 +821,7 @@ function setupUpdatesView() {
   const repoLink = document.getElementById('updRepoLink');
 
   updatesTab.onclick = () => switchView('updates');
+  document.getElementById('autoTab').onclick = () => switchView('auto');
 
   checkBtn.onclick = async () => {
     setUpdateMessage('info', 'Checking for updates…');
@@ -962,7 +966,9 @@ function switchView(view) {
   state.view = view;
   document.getElementById('viewProfile').hidden = (view !== 'profile');
   document.getElementById('viewUpdates').hidden = (view !== 'updates');
+  document.getElementById('viewAuto').hidden = (view !== 'auto');
   document.getElementById('updatesTab').classList.toggle('active', view === 'updates');
+  document.getElementById('autoTab').classList.toggle('active', view === 'auto');
 
   // Update active styling on profile tabs
   document.querySelectorAll('.tab').forEach((t, i) => {
@@ -975,6 +981,9 @@ function switchView(view) {
     refreshUpdateHistory();
     refreshStartupSettings();
   }
+  if (view === 'auto') {
+    refreshAutoView();
+  }
 }
 
 function setUpdateMessage(level, text) {
@@ -984,6 +993,413 @@ function setUpdateMessage(level, text) {
   el.className = 'updates-message ' + (level || 'info');
   el.textContent = text;
 }
+
+// =============================================
+// Auto Presence view
+// =============================================
+//
+// Local mirror of the auto-presence config. The main process is the source of
+// truth (it owns the timer & schedule logic), but we keep a copy here so the
+// UI renders without round-tripping IPC for every reflow. Saved via
+// window.multirp.auto.set(...).
+let autoConfig = {
+  enabled: false,
+  paused: false,
+  mode: 'rotation',                  // 'rotation' | 'shuffle' | 'schedule'
+  intervalValue: 30,
+  intervalUnit: 'minutes',           // 'seconds' | 'minutes' | 'hours' | 'days'
+  selectedProfileIds: [],            // for rotation/shuffle
+  rotationOrder: [],                 // ordered profile ids for rotation
+  scheduleRules: [],                 // [{id, profileId, days:[0..6], startMin, endMin}]
+  notifyOnSwitch: false,
+  pauseOnManual: true,
+  lastActivatedProfileId: null,
+  nextSwitchAt: null,                // unix ms
+};
+
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function unitToMs(value, unit) {
+  const n = Math.max(1, Math.floor(Number(value) || 1));
+  switch (unit) {
+    case 'seconds': return n * 1000;
+    case 'minutes': return n * 60_000;
+    case 'hours':   return n * 3_600_000;
+    case 'days':    return n * 86_400_000;
+    default:        return n * 60_000;
+  }
+}
+
+function humanInterval(value, unit) {
+  const n = Math.max(1, Math.floor(Number(value) || 1));
+  const label = (n === 1) ? unit.replace(/s$/, '') : unit;
+  return `${n} ${label}`;
+}
+
+function setupAutoPresenceView() {
+  // Mode picker
+  document.querySelectorAll('input[name="autoMode"]').forEach(r => {
+    r.onchange = () => {
+      autoConfig.mode = r.value;
+      saveAutoConfig();
+      refreshAutoView();
+    };
+  });
+
+  // Interval inputs
+  document.getElementById('autoIntervalValue').oninput = (e) => {
+    autoConfig.intervalValue = Math.max(1, Math.floor(Number(e.target.value) || 1));
+    document.getElementById('autoIntervalHint').textContent =
+      `Effective interval: ${humanInterval(autoConfig.intervalValue, autoConfig.intervalUnit)}`;
+    saveAutoConfig();
+  };
+  document.getElementById('autoIntervalUnit').onchange = (e) => {
+    autoConfig.intervalUnit = e.target.value;
+    document.getElementById('autoIntervalHint').textContent =
+      `Effective interval: ${humanInterval(autoConfig.intervalValue, autoConfig.intervalUnit)}`;
+    saveAutoConfig();
+  };
+
+  // Toggles
+  document.getElementById('autoNotifyToggle').onchange = (e) => {
+    autoConfig.notifyOnSwitch = e.target.checked;
+    saveAutoConfig();
+  };
+  document.getElementById('autoPauseOnManual').onchange = (e) => {
+    autoConfig.pauseOnManual = e.target.checked;
+    saveAutoConfig();
+  };
+
+  // Master toggle
+  document.getElementById('autoToggleBtn').onclick = async () => {
+    autoConfig.enabled = !autoConfig.enabled;
+    autoConfig.paused = false;
+    await saveAutoConfig();
+    refreshAutoView();
+  };
+  document.getElementById('autoResumeBtn').onclick = async () => {
+    autoConfig.paused = false;
+    await saveAutoConfig();
+    refreshAutoView();
+  };
+
+  // Add schedule rule
+  document.getElementById('autoAddRuleBtn').onclick = () => {
+    const firstId = state.profiles[0] ? state.profiles[0].id : null;
+    autoConfig.scheduleRules.push({
+      id: 'r' + Math.random().toString(36).slice(2, 9),
+      profileId: firstId,
+      days: [1, 2, 3, 4, 5], // weekdays
+      startMin: 9 * 60,      // 09:00
+      endMin: 18 * 60,       // 18:00
+    });
+    saveAutoConfig();
+    refreshAutoView();
+  };
+
+  // Listen for status updates pushed from main
+  if (window.multirp && window.multirp.auto && window.multirp.auto.onStatus) {
+    window.multirp.auto.onStatus((status) => {
+      // Merge status fields without losing UI-side edits
+      Object.assign(autoConfig, status || {});
+      refreshAutoDot();
+      if (state.view === 'auto') refreshAutoView();
+    });
+  }
+
+  // Initial fetch
+  fetchAutoConfig();
+}
+
+async function fetchAutoConfig() {
+  if (!window.multirp || !window.multirp.auto) return;
+  try {
+    const cfg = await window.multirp.auto.get();
+    if (cfg) {
+      autoConfig = { ...autoConfig, ...cfg };
+    }
+  } catch (e) { console.warn('auto.get failed', e); }
+  refreshAutoDot();
+}
+
+async function saveAutoConfig() {
+  if (!window.multirp || !window.multirp.auto) return;
+  // Strip transient fields the engine recomputes
+  const { nextSwitchAt, ...persisted } = autoConfig;
+  try {
+    const updated = await window.multirp.auto.set(persisted);
+    if (updated) Object.assign(autoConfig, updated);
+  } catch (e) { console.warn('auto.set failed', e); }
+  refreshAutoDot();
+}
+
+function refreshAutoDot() {
+  const dot = document.getElementById('autoDot');
+  if (!dot) return;
+  if (autoConfig.enabled && !autoConfig.paused) dot.removeAttribute('hidden');
+  else dot.setAttribute('hidden', '');
+}
+
+function refreshAutoView() {
+  // Mode radio reflection
+  document.querySelectorAll('input[name="autoMode"]').forEach(r => {
+    r.checked = (r.value === autoConfig.mode);
+  });
+
+  // Section visibility per mode
+  const isSchedule = (autoConfig.mode === 'schedule');
+  document.getElementById('autoIntervalSection').hidden = isSchedule;
+  document.getElementById('autoProfilePickerSection').hidden = isSchedule;
+  document.getElementById('autoScheduleSection').hidden = !isSchedule;
+
+  // Interval values
+  document.getElementById('autoIntervalValue').value = autoConfig.intervalValue;
+  document.getElementById('autoIntervalUnit').value = autoConfig.intervalUnit;
+  document.getElementById('autoIntervalHint').textContent =
+    `Effective interval: ${humanInterval(autoConfig.intervalValue, autoConfig.intervalUnit)}`;
+
+  // Toggles
+  document.getElementById('autoNotifyToggle').checked = !!autoConfig.notifyOnSwitch;
+  document.getElementById('autoPauseOnManual').checked = autoConfig.pauseOnManual !== false;
+
+  // Master button + status
+  const toggleBtn = document.getElementById('autoToggleBtn');
+  const statusLine = document.getElementById('autoStatusLine');
+  const pausedBanner = document.getElementById('autoPausedBanner');
+  if (autoConfig.enabled) {
+    toggleBtn.textContent = 'Stop Auto Presence';
+    toggleBtn.classList.remove('primary');
+    toggleBtn.classList.add('danger');
+    if (autoConfig.paused) {
+      statusLine.textContent = 'Paused after manual switch.';
+      pausedBanner.hidden = false;
+    } else {
+      const next = autoConfig.nextSwitchAt
+        ? `next switch in ${formatRelative(autoConfig.nextSwitchAt - Date.now())}`
+        : 'running';
+      statusLine.textContent = `Running — ${next}.`;
+      pausedBanner.hidden = true;
+    }
+  } else {
+    toggleBtn.textContent = 'Start Auto Presence';
+    toggleBtn.classList.add('primary');
+    toggleBtn.classList.remove('danger');
+    statusLine.textContent = 'Stopped — manual control.';
+    pausedBanner.hidden = true;
+  }
+
+  // Profile checkboxes
+  renderAutoProfileList();
+  // Schedule rules
+  renderAutoScheduleList();
+  // Up-next
+  const nextSection = document.getElementById('autoNextSection');
+  const nextLine = document.getElementById('autoNextLine');
+  if (autoConfig.enabled && !autoConfig.paused && autoConfig.nextSwitchAt) {
+    nextSection.hidden = false;
+    nextLine.textContent = `In ${formatRelative(autoConfig.nextSwitchAt - Date.now())} — ${formatTimeOfDay(autoConfig.nextSwitchAt)}`;
+  } else {
+    nextSection.hidden = true;
+  }
+
+  refreshAutoDot();
+}
+
+function renderAutoProfileList() {
+  const listEl = document.getElementById('autoProfileList');
+  listEl.innerHTML = '';
+  // Build the working order: existing order first, then any unselected at the end
+  const order = autoConfig.rotationOrder.length
+    ? autoConfig.rotationOrder.filter(id => state.profiles.find(p => p.id === id))
+    : state.profiles.map(p => p.id);
+  const tail = state.profiles.map(p => p.id).filter(id => !order.includes(id));
+  const ordered = [...order, ...tail];
+
+  ordered.forEach((pid, idx) => {
+    const p = state.profiles.find(x => x.id === pid);
+    if (!p) return;
+    const row = document.createElement('div');
+    row.className = 'auto-profile-row';
+    row.draggable = true;
+    row.dataset.pid = String(pid);
+
+    row.innerHTML = `
+      <span class="auto-drag-handle" title="Drag to reorder">⋮⋮</span>
+      <label class="auto-profile-check">
+        <input type="checkbox" data-pid="${pid}" ${autoConfig.selectedProfileIds.includes(pid) ? 'checked' : ''} />
+        <span></span>
+      </label>
+      <span class="auto-profile-name">${escapeHtml(p.name || ('Profile ' + (idx + 1)))}</span>
+      <span class="auto-profile-pos">${idx + 1}</span>
+    `;
+
+    const cb = row.querySelector('input[type="checkbox"]');
+    cb.onchange = () => {
+      const id = Number(cb.dataset.pid);
+      if (cb.checked) {
+        if (!autoConfig.selectedProfileIds.includes(id)) autoConfig.selectedProfileIds.push(id);
+      } else {
+        autoConfig.selectedProfileIds = autoConfig.selectedProfileIds.filter(x => x !== id);
+      }
+      saveAutoConfig();
+    };
+
+    // DnD reorder
+    row.addEventListener('dragstart', (e) => {
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', String(pid)); } catch {}
+    });
+    row.addEventListener('dragend', () => row.classList.remove('dragging'));
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    });
+    row.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const from = Number(e.dataTransfer.getData('text/plain'));
+      const to = pid;
+      if (from === to) return;
+      const cur = ordered.slice();
+      const fromIdx = cur.indexOf(from);
+      const toIdx = cur.indexOf(to);
+      if (fromIdx < 0 || toIdx < 0) return;
+      cur.splice(fromIdx, 1);
+      cur.splice(toIdx, 0, from);
+      autoConfig.rotationOrder = cur;
+      saveAutoConfig();
+      refreshAutoView();
+    });
+
+    listEl.appendChild(row);
+  });
+
+  // Persist current order if it wasn't set
+  if (!autoConfig.rotationOrder.length) {
+    autoConfig.rotationOrder = ordered;
+  }
+}
+
+function renderAutoScheduleList() {
+  const listEl = document.getElementById('autoScheduleList');
+  listEl.innerHTML = '';
+  if (!autoConfig.scheduleRules.length) {
+    const empty = document.createElement('div');
+    empty.className = 'auto-rule-empty';
+    empty.textContent = 'No rules yet — click “+ Add Rule” to create one.';
+    listEl.appendChild(empty);
+    return;
+  }
+  autoConfig.scheduleRules.forEach((rule, idx) => {
+    const row = document.createElement('div');
+    row.className = 'auto-rule';
+    const profileOptions = state.profiles
+      .map(p => `<option value="${p.id}" ${rule.profileId === p.id ? 'selected' : ''}>${escapeHtml(p.name || ('Profile ' + p.id))}</option>`)
+      .join('');
+    const dayChips = DAY_LABELS.map((label, i) => `
+      <label class="auto-day-chip ${rule.days.includes(i) ? 'on' : ''}" data-rule="${rule.id}" data-day="${i}">
+        <input type="checkbox" ${rule.days.includes(i) ? 'checked' : ''} />
+        <span>${label}</span>
+      </label>
+    `).join('');
+    row.innerHTML = `
+      <div class="auto-rule-head">
+        <span class="auto-rule-num">#${idx + 1}</span>
+        <select class="auto-rule-profile" data-rule="${rule.id}">${profileOptions}</select>
+        <button class="auto-rule-del" data-rule="${rule.id}" title="Delete rule">×</button>
+      </div>
+      <div class="auto-rule-days">${dayChips}</div>
+      <div class="auto-rule-times">
+        <span>From</span>
+        <input type="time" class="auto-rule-time" data-rule="${rule.id}" data-which="start" value="${minToHHMM(rule.startMin)}" />
+        <span>to</span>
+        <input type="time" class="auto-rule-time" data-rule="${rule.id}" data-which="end" value="${minToHHMM(rule.endMin)}" />
+      </div>
+    `;
+    listEl.appendChild(row);
+  });
+
+  // Wire up dynamic handlers
+  listEl.querySelectorAll('.auto-rule-profile').forEach(sel => {
+    sel.onchange = () => {
+      const r = autoConfig.scheduleRules.find(x => x.id === sel.dataset.rule);
+      if (r) { r.profileId = Number(sel.value); saveAutoConfig(); }
+    };
+  });
+  listEl.querySelectorAll('.auto-rule-del').forEach(btn => {
+    btn.onclick = () => {
+      autoConfig.scheduleRules = autoConfig.scheduleRules.filter(x => x.id !== btn.dataset.rule);
+      saveAutoConfig();
+      refreshAutoView();
+    };
+  });
+  listEl.querySelectorAll('.auto-day-chip input').forEach(cb => {
+    cb.onchange = () => {
+      const chip = cb.closest('.auto-day-chip');
+      const ruleId = chip.dataset.rule;
+      const day = Number(chip.dataset.day);
+      const r = autoConfig.scheduleRules.find(x => x.id === ruleId);
+      if (!r) return;
+      if (cb.checked) { if (!r.days.includes(day)) r.days.push(day); }
+      else { r.days = r.days.filter(d => d !== day); }
+      r.days.sort();
+      saveAutoConfig();
+      refreshAutoView();
+    };
+  });
+  listEl.querySelectorAll('.auto-rule-time').forEach(inp => {
+    inp.onchange = () => {
+      const r = autoConfig.scheduleRules.find(x => x.id === inp.dataset.rule);
+      if (!r) return;
+      const [h, m] = inp.value.split(':').map(Number);
+      const total = (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+      if (inp.dataset.which === 'start') r.startMin = total;
+      else r.endMin = total;
+      saveAutoConfig();
+    };
+  });
+}
+
+function minToHHMM(min) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function formatRelative(ms) {
+  if (ms <= 0) return 'now';
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m`;
+  const d = Math.floor(h / 24);
+  return `${d}d ${h % 24}h`;
+}
+function formatTimeOfDay(ms) {
+  const d = new Date(ms);
+  return d.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+// Refresh the up-next ticker every second while viewing the auto page so the
+// "next switch in 4m 12s" countdown stays alive.
+setInterval(() => {
+  if (state.view === 'auto' && autoConfig.enabled && !autoConfig.paused) {
+    const statusLine = document.getElementById('autoStatusLine');
+    const nextLine = document.getElementById('autoNextLine');
+    if (autoConfig.nextSwitchAt) {
+      const rel = formatRelative(autoConfig.nextSwitchAt - Date.now());
+      if (statusLine) statusLine.textContent = `Running — next switch in ${rel}.`;
+      if (nextLine) nextLine.textContent = `In ${rel} — ${formatTimeOfDay(autoConfig.nextSwitchAt)}`;
+    }
+  }
+}, 1000);
 
 function renderUpdatesView() {
   const us = state.updateState || {};

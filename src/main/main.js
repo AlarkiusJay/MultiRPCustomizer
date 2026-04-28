@@ -5,7 +5,7 @@
  * You may obtain a copy of the License at
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-const { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const RPC = require('discord-rpc');
@@ -540,6 +540,14 @@ async function connectProfile(profile) {
 }
 
 ipcMain.handle('rpc:connect', async (_evt, profile) => {
+  // If auto-presence is running and the user wants manual to pause it, flip the
+  // pause flag before activating. The renderer will see the new status and
+  // surface a 'Resume Auto' affordance.
+  if (autoConfig.enabled && !autoConfig.paused && autoConfig.pauseOnManual) {
+    autoConfig.paused = true;
+    saveAutoConfig();
+    stopAutoEngine();
+  }
   const r = await connectProfile(profile);
   rebuildTrayMenu();
   return r;
@@ -867,6 +875,258 @@ ipcMain.handle('profile:import', async () => {
   }
 });
 
+// =============================================================
+// Auto Presence — scheduler engine (v1.6.0)
+// =============================================================
+//
+// Source of truth for the auto-presence config and timer. Persists to
+// settings.json under `autoPresence`, evaluates current state on each tick,
+// activates the appropriate profile via the existing connectProfile() flow,
+// and broadcasts status updates back to the renderer + popout.
+
+const autoConfigFile = () => path.join(userDataPath(), 'auto-presence.json');
+
+const DEFAULT_AUTO_CONFIG = {
+  enabled: false,
+  paused: false,
+  mode: 'rotation',
+  intervalValue: 30,
+  intervalUnit: 'minutes',
+  selectedProfileIds: [],
+  rotationOrder: [],
+  scheduleRules: [],
+  notifyOnSwitch: false,
+  pauseOnManual: true,
+  lastActivatedProfileId: null,
+  nextSwitchAt: null
+};
+
+let autoConfig = { ...DEFAULT_AUTO_CONFIG };
+let autoTimer = null;
+let autoRotationIdx = 0;
+
+function loadAutoConfig() {
+  try {
+    if (fs.existsSync(autoConfigFile())) {
+      const raw = JSON.parse(fs.readFileSync(autoConfigFile(), 'utf-8'));
+      autoConfig = { ...DEFAULT_AUTO_CONFIG, ...raw };
+    }
+  } catch (e) {
+    console.error('Failed to load auto-presence config:', e);
+    autoConfig = { ...DEFAULT_AUTO_CONFIG };
+  }
+  return autoConfig;
+}
+
+function saveAutoConfig() {
+  try {
+    fs.mkdirSync(userDataPath(), { recursive: true });
+    fs.writeFileSync(autoConfigFile(), JSON.stringify(autoConfig, null, 2));
+    return true;
+  } catch (e) {
+    console.error('Failed to save auto-presence config:', e);
+    return false;
+  }
+}
+
+function autoUnitToMs(value, unit) {
+  const n = Math.max(1, Math.floor(Number(value) || 1));
+  switch (unit) {
+    case 'seconds': return n * 1000;
+    case 'minutes': return n * 60_000;
+    case 'hours':   return n * 3_600_000;
+    case 'days':    return n * 86_400_000;
+    default:        return n * 60_000;
+  }
+}
+
+function broadcastAutoStatus() {
+  const payload = {
+    enabled: autoConfig.enabled,
+    paused: autoConfig.paused,
+    nextSwitchAt: autoConfig.nextSwitchAt,
+    lastActivatedProfileId: autoConfig.lastActivatedProfileId
+  };
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('auto:status', payload);
+    }
+  } catch (_) {}
+}
+
+// Decide which profile should be active right now.
+// Returns a profile object from disk, or null if nothing should change.
+function evaluateAutoPresence(profiles) {
+  if (!autoConfig.enabled || autoConfig.paused) return null;
+  if (!Array.isArray(profiles) || profiles.length === 0) return null;
+
+  const byId = new Map(profiles.map(p => [p.id, p]));
+
+  if (autoConfig.mode === 'schedule') {
+    const now = new Date();
+    const dow = now.getDay();
+    const minOfDay = now.getHours() * 60 + now.getMinutes();
+    for (const rule of (autoConfig.scheduleRules || [])) {
+      if (!rule || !Array.isArray(rule.days)) continue;
+      if (!rule.days.includes(dow)) continue;
+      const start = Math.max(0, Math.min(1439, Number(rule.startMin) || 0));
+      const end = Math.max(0, Math.min(1440, Number(rule.endMin) || 0));
+      // Handle overnight rules where end <= start (e.g. 22:00 → 06:00)
+      const matches = (end > start)
+        ? (minOfDay >= start && minOfDay < end)
+        : (minOfDay >= start || minOfDay < end);
+      if (matches && byId.has(rule.profileId)) {
+        return byId.get(rule.profileId);
+      }
+    }
+    return null;
+  }
+
+  // Rotation / shuffle: filter selected profiles to ones that still exist.
+  const selectedAvailable = (autoConfig.selectedProfileIds || []).filter(id => byId.has(id));
+  if (selectedAvailable.length === 0) return null;
+
+  if (autoConfig.mode === 'shuffle') {
+    // Avoid repeating the same profile back-to-back when possible.
+    let pool = selectedAvailable;
+    if (selectedAvailable.length > 1 && autoConfig.lastActivatedProfileId) {
+      pool = selectedAvailable.filter(id => id !== autoConfig.lastActivatedProfileId);
+      if (pool.length === 0) pool = selectedAvailable;
+    }
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    return byId.get(pick) || null;
+  }
+
+  // Rotation: walk rotationOrder, then any leftover selected ids.
+  const order = (autoConfig.rotationOrder || []).filter(id => selectedAvailable.includes(id));
+  for (const id of selectedAvailable) {
+    if (!order.includes(id)) order.push(id);
+  }
+  if (order.length === 0) return null;
+  // Find current index based on lastActivatedProfileId to advance
+  if (autoConfig.lastActivatedProfileId) {
+    const lastIdx = order.indexOf(autoConfig.lastActivatedProfileId);
+    autoRotationIdx = (lastIdx >= 0) ? (lastIdx + 1) % order.length : 0;
+  } else {
+    autoRotationIdx = autoRotationIdx % order.length;
+  }
+  return byId.get(order[autoRotationIdx]) || null;
+}
+
+function notifyAutoSwitch(profile) {
+  if (!autoConfig.notifyOnSwitch) return;
+  if (!Notification || !Notification.isSupported || !Notification.isSupported()) return;
+  try {
+    const n = new Notification({
+      title: 'MultiRP — Auto Presence',
+      body: `Switched to: ${profile.name || profile.id || 'profile'}`,
+      silent: true
+    });
+    n.show();
+  } catch (_) { /* notifications optional */ }
+}
+
+async function tickAutoPresence() {
+  if (!autoConfig.enabled || autoConfig.paused) {
+    autoConfig.nextSwitchAt = null;
+    broadcastAutoStatus();
+    return;
+  }
+
+  const data = loadProfilesFromDisk();
+  const profiles = (data && Array.isArray(data.profiles)) ? data.profiles : [];
+
+  const target = evaluateAutoPresence(profiles);
+
+  if (target && target.id !== activeProfileId) {
+    const result = await connectProfile(target);
+    if (result && result.ok) {
+      autoConfig.lastActivatedProfileId = target.id;
+      try { rebuildTrayMenu(); } catch (_) {}
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('rpc:activeChanged', { activeProfileId: target.id, source: 'auto' });
+        }
+      } catch (_) {}
+      notifyAutoSwitch(target);
+    } else {
+      console.warn('Auto-presence connect failed:', result && result.error);
+    }
+  } else if (target && target.id === activeProfileId) {
+    // Already active — keep lastActivatedProfileId in sync.
+    autoConfig.lastActivatedProfileId = target.id;
+  }
+
+  // Schedule next tick.
+  let nextDelay;
+  if (autoConfig.mode === 'schedule') {
+    // Re-evaluate every 30 seconds so day/time boundaries trigger promptly.
+    nextDelay = 30_000;
+  } else {
+    nextDelay = autoUnitToMs(autoConfig.intervalValue, autoConfig.intervalUnit);
+  }
+  autoConfig.nextSwitchAt = Date.now() + nextDelay;
+  saveAutoConfig();
+  broadcastAutoStatus();
+
+  if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
+  autoTimer = setTimeout(tickAutoPresence, nextDelay);
+}
+
+function startAutoEngine(opts = {}) {
+  if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
+  if (!autoConfig.enabled || autoConfig.paused) {
+    autoConfig.nextSwitchAt = null;
+    saveAutoConfig();
+    broadcastAutoStatus();
+    return;
+  }
+  // Run an immediate tick when first enabled / config saved so the user sees
+  // the right profile go active right away. On startup we wait one delay so
+  // we don't yank a freshly-launched session.
+  if (opts.runImmediately !== false) {
+    setImmediate(tickAutoPresence);
+  } else {
+    const delay = (autoConfig.mode === 'schedule')
+      ? 30_000
+      : autoUnitToMs(autoConfig.intervalValue, autoConfig.intervalUnit);
+    autoConfig.nextSwitchAt = Date.now() + delay;
+    saveAutoConfig();
+    broadcastAutoStatus();
+    autoTimer = setTimeout(tickAutoPresence, delay);
+  }
+}
+
+function stopAutoEngine() {
+  if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
+  autoConfig.nextSwitchAt = null;
+  broadcastAutoStatus();
+}
+
+// IPC: renderer <-> auto engine
+ipcMain.handle('auto:get', async () => {
+  return autoConfig;
+});
+
+ipcMain.handle('auto:set', async (_evt, partial) => {
+  if (!partial || typeof partial !== 'object') return autoConfig;
+  const wasEnabled = autoConfig.enabled && !autoConfig.paused;
+  autoConfig = { ...autoConfig, ...partial };
+  // Sanity-clamp
+  autoConfig.intervalValue = Math.max(1, Math.floor(Number(autoConfig.intervalValue) || 1));
+  if (!['seconds','minutes','hours','days'].includes(autoConfig.intervalUnit)) autoConfig.intervalUnit = 'minutes';
+  if (!['rotation','shuffle','schedule'].includes(autoConfig.mode)) autoConfig.mode = 'rotation';
+  saveAutoConfig();
+
+  const nowEnabled = autoConfig.enabled && !autoConfig.paused;
+  if (nowEnabled) {
+    startAutoEngine({ runImmediately: !wasEnabled });
+  } else {
+    stopAutoEngine();
+  }
+  return autoConfig;
+});
+
 app.whenReady().then(() => {
   updateState.currentVersion = app.getVersion();
   reconcileInstallHistory();
@@ -874,6 +1134,13 @@ app.whenReady().then(() => {
 
   // Reconcile login item with persisted setting so user's preference survives reinstalls.
   applyLoginItemSettings(loadSettings());
+
+  // Boot the auto-presence engine. Wait one full delay before the first tick
+  // so we don't yank a freshly-launched profile out from under the user.
+  loadAutoConfig();
+  if (autoConfig.enabled && !autoConfig.paused) {
+    startAutoEngine({ runImmediately: false });
+  }
 
   setupTray();
   createWindow();
