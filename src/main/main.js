@@ -670,6 +670,72 @@ ipcMain.handle('app:getVersion', async () => {
   return app.getVersion();
 });
 
+// ---------------- "View as others" popout window ----------------
+// A separate, frameless BrowserWindow that renders the same Discord-style
+// presence card. Useful because Discord hides your own buttons from your own
+// profile card, so this gives you a way to actually *see* what others see.
+let popoutWindow = null;
+
+function createPopoutWindow() {
+  if (popoutWindow && !popoutWindow.isDestroyed()) {
+    popoutWindow.focus();
+    return popoutWindow;
+  }
+  popoutWindow = new BrowserWindow({
+    width: 380,
+    height: 580,
+    minWidth: 320,
+    minHeight: 480,
+    title: 'MultiRP — View as others',
+    frame: false,
+    transparent: false,
+    backgroundColor: '#16171c',
+    resizable: true,
+    fullscreenable: false,
+    skipTaskbar: false,
+    parent: mainWindow || undefined,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+  Menu.setApplicationMenu(null);
+  popoutWindow.setMenuBarVisibility(false);
+  const popoutPath = path.join(__dirname, '..', 'renderer', 'popout.html');
+  popoutWindow.loadFile(popoutPath).catch((err) => {
+    console.error('[MultiRP] Failed to load popout:', err);
+  });
+  popoutWindow.on('closed', () => { popoutWindow = null; });
+  return popoutWindow;
+}
+
+ipcMain.handle('popout:open', async () => {
+  createPopoutWindow();
+  return { ok: true };
+});
+
+ipcMain.handle('popout:close', async () => {
+  if (popoutWindow && !popoutWindow.isDestroyed()) {
+    popoutWindow.close();
+  }
+  return { ok: true };
+});
+
+// Snapshot relay: main window pushes a snapshot, we forward to the popout.
+ipcMain.on('popout:sync', (_evt, snapshot) => {
+  if (popoutWindow && !popoutWindow.isDestroyed()) {
+    popoutWindow.webContents.send('popout:snapshot', snapshot);
+  }
+});
+
+// Popout signals it's ready and wants the latest snapshot pushed to it.
+ipcMain.on('popout:ready', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('popout:requestSnapshot');
+  }
+});
+
 // ---------------- Discord App Asset resolver ----------------
 // Resolves an image "key" (asset name) for a given Discord Application Client ID
 // to a real CDN URL so the live preview can render the actual image.

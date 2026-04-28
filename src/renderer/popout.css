@@ -1,0 +1,269 @@
+/* MultiRP "View as others" popout window styling.
+   Approximates the Discord profile-popout look so it feels like you're
+   peeking over a friend's shoulder while they look at your profile. */
+:root {
+  --bg-0: #0f1014;
+  --bg-1: #16171c;
+  --bg-2: #1c1d23;
+  --bg-3: #23252d;
+  --border: #2a2c34;
+  --border-strong: #3a3d47;
+  --text: #e6e8ee;
+  --text-dim: #a4a8b3;
+  --text-faint: #777b86;
+  --accent: #7c8cff;
+  --accent-hover: #93a0ff;
+  --online: #43b581;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", system-ui, sans-serif;
+  background: transparent;
+  color: var(--text);
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+}
+body {
+  /* Round corners on the whole frameless window */
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* Title bar — draggable */
+.popout-titlebar {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 8px 0 14px;
+  background: var(--bg-0);
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+.popout-title { flex: 1; }
+.popout-live {
+  font-size: 10.5px;
+  color: var(--online);
+  margin-right: 8px;
+  letter-spacing: 0.3px;
+  font-weight: 700;
+}
+.popout-close {
+  -webkit-app-region: no-drag;
+  background: transparent;
+  border: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+}
+.popout-close:hover { background: rgba(255, 80, 80, 0.18); color: #ff7676; }
+
+/* The faux Discord profile popout frame */
+.popout-discord-frame {
+  background: var(--bg-1);
+  height: calc(100vh - 32px);
+  overflow-y: auto;
+  position: relative;
+}
+
+/* A subtle gradient banner like Discord profile popouts */
+.popout-banner {
+  height: 60px;
+  background: linear-gradient(135deg, #4a3aff 0%, #7c8cff 50%, #c084fc 100%);
+  position: relative;
+}
+
+.popout-avatar-wrap {
+  position: relative;
+  margin: -36px 0 0 16px;
+  width: 72px;
+  height: 72px;
+}
+.popout-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--bg-3) center/cover no-repeat;
+  border: 5px solid var(--bg-1);
+}
+.popout-status-dot {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  background: var(--online);
+  border-radius: 50%;
+  border: 4px solid var(--bg-1);
+}
+
+.popout-username {
+  padding: 8px 16px 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.popout-handle {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
+.popout-section-label {
+  margin: 18px 16px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.popout-activity {
+  margin: 0 16px 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+}
+.popout-activity-verb {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+.popout-activity-body {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.popout-image-wrap { position: relative; flex-shrink: 0; }
+.popout-large {
+  width: 64px;
+  height: 64px;
+  background: var(--bg-3) center/cover no-repeat;
+  border-radius: 8px;
+  transition: transform 0.15s ease;
+}
+.popout-large.has-image { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); }
+.popout-large:hover { transform: scale(1.04); }
+.popout-small {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-2);
+  background: var(--bg-3) center/cover no-repeat;
+  display: none;
+}
+.popout-small.visible { display: block; }
+.popout-activity-text { flex: 1; min-width: 0; overflow: hidden; }
+.popout-app {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.25;
+  margin-bottom: 2px;
+  word-break: break-word;
+}
+.popout-details {
+  font-size: 12.5px;
+  color: var(--text);
+  line-height: 1.35;
+  word-break: break-word;
+}
+.popout-state {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  line-height: 1.35;
+  word-break: break-word;
+  margin-top: 1px;
+}
+.popout-elapsed {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.popout-elapsed:empty { display: none; }
+.popout-elapsed::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background: currentColor;
+  -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7z"/></svg>') no-repeat center/contain;
+          mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7z"/></svg>') no-repeat center/contain;
+  opacity: 0.85;
+}
+
+.popout-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+.popout-buttons:empty { display: none; }
+.popout-button {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.08s ease;
+  -webkit-app-region: no-drag;
+}
+.popout-button:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.popout-button:active { transform: scale(0.98); }
+
+.popout-footnote {
+  margin: 0 16px 16px;
+  padding: 10px 12px;
+  background: rgba(124, 140, 255, 0.08);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+/* Soft scroll style */
+.popout-discord-frame::-webkit-scrollbar { width: 8px; }
+.popout-discord-frame::-webkit-scrollbar-thumb {
+  background: var(--bg-3);
+  border-radius: 4px;
+}
+.popout-discord-frame::-webkit-scrollbar-track { background: transparent; }

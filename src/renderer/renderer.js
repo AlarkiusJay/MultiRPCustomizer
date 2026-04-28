@@ -363,26 +363,96 @@ async function resolveAndApply(el, clientId, key, fallbackGradient) {
   }
 }
 
+// Map activity type id -> Discord's user-facing verb shown above the activity card
+function activityVerb(type) {
+  switch (Number(type)) {
+    case 2: return 'Listening to';
+    case 3: return 'Watching';
+    case 5: return 'Competing in';
+    default: return 'Playing'; // 0 and any unknown
+  }
+}
+
+// Compute the elapsed/range string Discord shows under the activity. Mirrors
+// the visual format "H:MM:SS elapsed" / "M:SS elapsed" / "M:SS — M:SS left".
+function formatElapsedString(p) {
+  const now = Math.floor(Date.now() / 1000);
+  const fmt = (sec) => {
+    sec = Math.max(0, Math.floor(sec));
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  };
+  const mode = p.timestampMode || 'none';
+  if (mode === 'none') return '';
+  if (mode === 'elapsed') {
+    return `${fmt(0)} elapsed`;
+  }
+  if (mode === 'custom_start') {
+    const start = Number(p.startTimestamp || 0);
+    if (!start) return '';
+    return `${fmt(now - start)} elapsed`;
+  }
+  if (mode === 'custom_range') {
+    const start = Number(p.startTimestamp || 0);
+    const end = Number(p.endTimestamp || 0);
+    if (!end) return '';
+    if (now < start) return `starts in ${fmt(start - now)}`;
+    if (now > end) return 'ended';
+    return `${fmt(now - start)} — ${fmt(end - now)} left`;
+  }
+  return '';
+}
+
+// Live ticker for the elapsed counter — fires once per second only when the
+// active profile uses a timestamp mode that needs ticking.
+let elapsedTickTimer = null;
+function startElapsedTicker() {
+  if (elapsedTickTimer) return;
+  elapsedTickTimer = setInterval(() => {
+    const p = currentProfile();
+    const mode = p.timestampMode || 'none';
+    if (mode === 'none') return;
+    const el = document.getElementById('prevElapsed');
+    if (!el) return;
+    el.textContent = formatElapsedString(p);
+    // Also push to popout if it's open
+    pushPreviewToPopout({ elapsed: el.textContent });
+  }, 1000);
+}
+startElapsedTicker();
+
 function renderPreview() {
   const p = currentProfile();
+  document.getElementById('prevActivityLabel').textContent = activityVerb(p.activityType);
   document.getElementById('prevAppName').textContent = p.name || 'App name';
   document.getElementById('prevDetails').textContent = p.details || '—';
   document.getElementById('prevState').textContent = p.state || '—';
 
+  const elapsedEl = document.getElementById('prevElapsed');
+  const elapsedStr = formatElapsedString(p);
+  elapsedEl.textContent = elapsedStr;
+  elapsedEl.style.display = elapsedStr ? '' : 'none';
+
   const btnsEl = document.getElementById('prevButtons');
   btnsEl.innerHTML = '';
-  if (p.button1Label && p.button1Url) {
+  const makeButton = (label, url) => {
     const b = document.createElement('div');
     b.className = 'preview-button';
-    b.textContent = p.button1Label;
-    btnsEl.appendChild(b);
-  }
-  if (p.button2Label && p.button2Url) {
-    const b = document.createElement('div');
-    b.className = 'preview-button';
-    b.textContent = p.button2Label;
-    btnsEl.appendChild(b);
-  }
+    b.textContent = label;
+    b.title = `${label} — ${url}\nClick to open in browser`;
+    b.onclick = (e) => {
+      e.preventDefault();
+      if (url && /^https?:\/\//i.test(url) && window.multirp && window.multirp.openExternal) {
+        window.multirp.openExternal(url);
+      }
+    };
+    return b;
+  };
+  if (p.button1Label && p.button1Url) btnsEl.appendChild(makeButton(p.button1Label, p.button1Url));
+  if (p.button2Label && p.button2Url) btnsEl.appendChild(makeButton(p.button2Label, p.button2Url));
 
   const big = document.getElementById('prevLarge');
   const small = document.getElementById('prevSmall');
@@ -402,11 +472,56 @@ function renderPreview() {
     if (cur.smallImageKey) {
       resolveAndApply(small, cur.clientId, cur.smallImageKey, smallFallback);
     }
+    // Also push fully-resolved snapshot to popout once images settle
+    pushPreviewSnapshot();
   }, 500);
 
   // Tooltips for images using the user-provided tooltip text
   big.title = p.largeImageTooltip || '';
   small.title = p.smallImageTooltip || '';
+
+  pushPreviewSnapshot();
+}
+
+// ---------- Popout sync ----------
+// Build a serializable snapshot of everything the popout window needs to
+// render the same card. Resolved image URLs are read from the cache so the
+// popout doesn't have to do its own asset lookups.
+function buildPreviewSnapshot() {
+  const p = currentProfile();
+  const lookupUrl = (key) => {
+    if (!key) return null;
+    if (/^https?:\/\//i.test(key)) return key;
+    return assetUrlCache.get(`${p.clientId || ''}|${key}`) || null;
+  };
+  return {
+    activityVerb: activityVerb(p.activityType),
+    appName: p.name || 'App name',
+    details: p.details || '',
+    state: p.state || '',
+    elapsed: formatElapsedString(p),
+    largeUrl: lookupUrl(p.largeImageKey),
+    smallUrl: lookupUrl(p.smallImageKey),
+    largeTooltip: p.largeImageTooltip || '',
+    smallTooltip: p.smallImageTooltip || '',
+    buttons: [
+      (p.button1Label && p.button1Url) ? { label: p.button1Label, url: p.button1Url } : null,
+      (p.button2Label && p.button2Url) ? { label: p.button2Label, url: p.button2Url } : null,
+    ].filter(Boolean),
+    isLive: state.liveProfileId === p.id,
+  };
+}
+
+function pushPreviewSnapshot() {
+  if (window.multirp && window.multirp.popoutSync) {
+    try { window.multirp.popoutSync(buildPreviewSnapshot()); } catch (_) {}
+  }
+}
+// Lightweight push for partial updates (e.g. just the ticking elapsed string)
+function pushPreviewToPopout(partial) {
+  if (window.multirp && window.multirp.popoutSync) {
+    try { window.multirp.popoutSync({ ...buildPreviewSnapshot(), ...partial }); } catch (_) {}
+  }
 }
 
 // ---------- Sync field <-> profile ----------
@@ -652,6 +767,23 @@ async function init() {
     }
   };
   // CustomRP inspiration link
+  // "View as others" popout button — opens a separate window styled like
+  // another user's Discord client looking at your profile.
+  const openPopoutBtn = document.getElementById('openPopout');
+  if (openPopoutBtn) {
+    openPopoutBtn.onclick = async () => {
+      if (window.multirp && window.multirp.openPopout) {
+        await window.multirp.openPopout();
+        // Send the current state immediately so the popout has data on first paint
+        pushPreviewSnapshot();
+      }
+    };
+  }
+  // When the popout asks for an initial snapshot (e.g. on its first load), push one.
+  if (window.multirp && window.multirp.onPopoutReady) {
+    window.multirp.onPopoutReady(() => pushPreviewSnapshot());
+  }
+
   const helpCustomrpLink = document.getElementById('helpCustomrpLink');
   if (helpCustomrpLink) {
     helpCustomrpLink.onclick = (e) => {

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: https://cdn.discordapp.com https://media.discordapp.net;" />
+  <title>MultiRP — View as others</title>
+  <link rel="stylesheet" href="popout.css" />
+</head>
+<body>
+  <!-- Frameless drag bar so users can move the popout window -->
+  <div class="popout-titlebar">
+    <span class="popout-title">View as others see you</span>
+    <span class="popout-live" id="liveDot" hidden>● Live</span>
+    <button class="popout-close" id="popoutClose" title="Close">×</button>
+  </div>
+
+  <!-- Faux Discord profile-popout frame around the activity card -->
+  <div class="popout-discord-frame">
+    <!-- Subtle banner at the top to mimic a Discord profile popout -->
+    <div class="popout-banner"></div>
+
+    <div class="popout-avatar-wrap">
+      <div class="popout-avatar" id="popoutAvatar"></div>
+      <div class="popout-status-dot"></div>
+    </div>
+
+    <div class="popout-username">
+      <span id="popoutUsername">You</span>
+      <span class="popout-handle" id="popoutHandle">via MultiRP</span>
+    </div>
+
+    <div class="popout-section-label">Activity</div>
+
+    <div class="popout-activity">
+      <div class="popout-activity-verb" id="popActivityVerb">Playing</div>
+
+      <div class="popout-activity-body">
+        <div class="popout-image-wrap">
+          <div class="popout-large" id="popLarge"></div>
+          <div class="popout-small" id="popSmall"></div>
+        </div>
+        <div class="popout-activity-text">
+          <div class="popout-app" id="popAppName">App name</div>
+          <div class="popout-details" id="popDetails">—</div>
+          <div class="popout-state" id="popState">—</div>
+          <div class="popout-elapsed" id="popElapsed"></div>
+        </div>
+      </div>
+
+      <div class="popout-buttons" id="popButtons"></div>
+    </div>
+
+    <div class="popout-footnote">
+      <span>This is what other users see on their Discord. <b>Buttons here actually work</b> for you, even though Discord hides them in your own profile card.</span>
+    </div>
+  </div>
+
+  <script src="popout.js"></script>
+</body>
+</html>

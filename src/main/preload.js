@@ -39,6 +39,22 @@ contextBridge.exposeInMainWorld('multirp', {
   // App info
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
 
+  // "View as others" popout window
+  openPopout: () => ipcRenderer.invoke('popout:open'),
+  closePopout: () => ipcRenderer.invoke('popout:close'),
+  popoutSync: (snapshot) => ipcRenderer.send('popout:sync', snapshot),
+  popoutReady: () => ipcRenderer.send('popout:ready'),
+  onPopoutSnapshot: (cb) => {
+    const listener = (_e, snap) => cb(snap);
+    ipcRenderer.on('popout:snapshot', listener);
+    return () => ipcRenderer.removeListener('popout:snapshot', listener);
+  },
+  onPopoutReady: (cb) => {
+    const listener = () => cb();
+    ipcRenderer.on('popout:requestSnapshot', listener);
+    return () => ipcRenderer.removeListener('popout:requestSnapshot', listener);
+  },
+
   // Startup / tray settings bridge
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),

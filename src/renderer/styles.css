@@ -300,14 +300,61 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
   top: 16px;
 }
 .preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.6px;
   color: var(--text-dim);
   margin-bottom: 12px;
+  gap: 8px;
 }
-.preview-body { display: flex; gap: 12px; }
+.preview-header-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.preview-popout-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0.2px;
+  color: var(--accent-hover);
+  background: rgba(124, 140, 255, 0.10);
+  border: 1px solid rgba(124, 140, 255, 0.25);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.08s ease;
+  flex-shrink: 0;
+}
+.preview-popout-btn:hover {
+  background: rgba(124, 140, 255, 0.18);
+  border-color: rgba(124, 140, 255, 0.45);
+}
+.preview-popout-btn:active { transform: scale(0.97); }
+.popout-icon { font-size: 13px; line-height: 1; }
+
+/* The inner Discord-style card. Matches Discord's profile-popout activity card
+   layout: a small "Playing/Listening to/..." label, a 64x64 image with the
+   small image dot overlay, the title/details/state stack with a live elapsed
+   timer underneath, and the button stack below. */
+.preview-discord-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+}
+.preview-activity-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+.preview-body { display: flex; gap: 12px; align-items: flex-start; }
 .preview-images { position: relative; flex-shrink: 0; }
 .preview-large {
   width: 64px; height: 64px;
@@ -347,18 +394,44 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
   100% { transform: translateX(100%); }
 }
 .preview-text { flex: 1; min-width: 0; overflow: hidden; }
-.preview-app { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.4px; margin-bottom: 4px; }
-.preview-details { font-size: 13px; font-weight: 600; color: var(--text); word-break: break-word; line-height: 1.3; }
-.preview-state { font-size: 12px; color: var(--text-dim); word-break: break-word; line-height: 1.3; margin-top: 2px; }
-.preview-buttons { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
-.preview-button {
-  background: var(--bg-3);
-  border: 1px solid var(--border-strong);
-  border-radius: 5px;
-  padding: 7px 10px;
+.preview-app { font-size: 14px; font-weight: 700; color: var(--text); word-break: break-word; line-height: 1.25; margin-bottom: 2px; }
+.preview-details { font-size: 12.5px; color: var(--text); word-break: break-word; line-height: 1.35; }
+.preview-state { font-size: 12.5px; color: var(--text-dim); word-break: break-word; line-height: 1.35; margin-top: 1px; }
+.preview-elapsed {
   font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.preview-elapsed::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background: currentColor;
+  -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7z"/></svg>') no-repeat center/contain;
+          mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7z"/></svg>') no-repeat center/contain;
+  opacity: 0.85;
+}
+.preview-buttons { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.preview-button {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 6px;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 500;
   text-align: center;
   color: var(--text);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.preview-button:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.18);
 }
 .preview-note {
   margin-top: 12px;

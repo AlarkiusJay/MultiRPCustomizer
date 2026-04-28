@@ -158,21 +158,31 @@
       </section>
 
       <aside class="preview-card">
-        <div class="preview-header">Preview</div>
-        <div class="preview-body">
-          <div class="preview-images">
-            <div class="preview-large" id="prevLarge"></div>
-            <div class="preview-small" id="prevSmall"></div>
-          </div>
-          <div class="preview-text">
-            <div class="preview-app" id="prevAppName">App name (Client ID)</div>
-            <div class="preview-details" id="prevDetails">Details</div>
-            <div class="preview-state" id="prevState">State</div>
-          </div>
+        <div class="preview-header">
+          <span class="preview-header-title">Preview — as others see you</span>
+          <button class="preview-popout-btn" id="openPopout" title="Open a separate window styled like another user viewing your profile">
+            <span class="popout-icon" aria-hidden="true">⧉</span>
+            <span>View as others</span>
+          </button>
         </div>
-        <div class="preview-buttons" id="prevButtons"></div>
+        <div class="preview-discord-card">
+          <div class="preview-activity-label" id="prevActivityLabel">Playing</div>
+          <div class="preview-body">
+            <div class="preview-images">
+              <div class="preview-large" id="prevLarge"></div>
+              <div class="preview-small" id="prevSmall"></div>
+            </div>
+            <div class="preview-text">
+              <div class="preview-app" id="prevAppName">App name (Client ID)</div>
+              <div class="preview-details" id="prevDetails">Details</div>
+              <div class="preview-state" id="prevState">State</div>
+              <div class="preview-elapsed" id="prevElapsed"></div>
+            </div>
+          </div>
+          <div class="preview-buttons" id="prevButtons"></div>
+        </div>
         <div class="preview-note">
-          Discord wraps long lines automatically. Buttons only appear clickable to other users.
+          Click <b>View as others</b> to pop this out into its own window — useful since Discord hides your own buttons from your own profile.
         </div>
       </aside>
     </main>
@@ -272,7 +282,7 @@
     </main>
 
     <footer class="footer">
-      <span id="footerVersion">v1.4.0 · Built by Alarkius Elvya Jay</span>
+      <span id="footerVersion">v1.5.0 · Built by Alarkius Elvya Jay</span>
       <span class="footer-right">
         <a href="#" id="openHelp">Help &amp; Setup Guide</a>
       </span>
