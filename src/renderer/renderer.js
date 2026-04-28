@@ -18,6 +18,32 @@ const FIELD_KEYS = [
   'button2Label', 'button2Url'
 ];
 
+// =============================================================
+// Profile Theme defaults & helpers (v1.7.0)
+// =============================================================
+//
+// Each profile carries an optional `theme` object. When the profile is
+// activated (and theme.enabled is true), the renderer injects these as CSS
+// variables on :root and <body> gets a class to flip into themed mode.
+// `null`/missing theme = stock dark.
+const DEFAULT_PROFILE_THEME = {
+  enabled: false,
+  accent: '#7c8cff',          // primary brand / button color
+  accentHover: '#93a0ff',     // primary hover
+  bg1: '#1a1a1d',             // app background
+  bg2: '#212124',             // panel background
+  bg3: '#28282c',             // raised surface
+  border: '#38383d',
+  text: '#e6e8ee',
+  textDim: '#a4a8b3',
+  bgGradient: ''              // optional CSS background image, e.g. linear-gradient(...) — empty = solid bg1
+};
+
+function profileTheme(profile) {
+  if (!profile || !profile.theme) return null;
+  return { ...DEFAULT_PROFILE_THEME, ...profile.theme };
+}
+
 function newProfile(idx) {
   return {
     id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
@@ -38,7 +64,8 @@ function newProfile(idx) {
     button1Label: '',
     button1Url: '',
     button2Label: '',
-    button2Url: ''
+    button2Url: '',
+    theme: { ...DEFAULT_PROFILE_THEME }
   };
 }
 
@@ -60,8 +87,61 @@ async function loadStore() {
   const data = await window.multirp.loadStore();
   if (data && Array.isArray(data.profiles) && data.profiles.length > 0) {
     state.profiles = data.profiles.slice(0, MAX_PROFILES);
+    // Migrate older profiles that pre-date v1.7.0 themes
+    state.profiles.forEach(p => {
+      if (!p.theme) p.theme = { ...DEFAULT_PROFILE_THEME };
+      else p.theme = { ...DEFAULT_PROFILE_THEME, ...p.theme };
+    });
     state.activeTab = Math.min(data.activeTab || 0, state.profiles.length - 1);
   }
+}
+
+// =============================================================
+// Theme application (v1.7.0)
+// =============================================================
+// Apply a profile's theme to the live UI by setting CSS variables on :root
+// and toggling a `.themed` class on <body>. Pass null to revert to stock.
+function applyThemeFromProfile(profile) {
+  const root = document.documentElement;
+  const body = document.body;
+  const t = profileTheme(profile);
+
+  if (!t || !t.enabled) {
+    // Revert all overrides
+    root.style.removeProperty('--accent');
+    root.style.removeProperty('--accent-hover');
+    root.style.removeProperty('--bg-1');
+    root.style.removeProperty('--bg-2');
+    root.style.removeProperty('--bg-3');
+    root.style.removeProperty('--border');
+    root.style.removeProperty('--text');
+    root.style.removeProperty('--text-dim');
+    root.style.removeProperty('--profile-bg-image');
+    body && body.classList.remove('themed');
+    return;
+  }
+
+  root.style.setProperty('--accent', t.accent);
+  root.style.setProperty('--accent-hover', t.accentHover || t.accent);
+  root.style.setProperty('--bg-1', t.bg1);
+  root.style.setProperty('--bg-2', t.bg2);
+  root.style.setProperty('--bg-3', t.bg3);
+  root.style.setProperty('--border', t.border);
+  root.style.setProperty('--text', t.text);
+  root.style.setProperty('--text-dim', t.textDim);
+  root.style.setProperty('--profile-bg-image', t.bgGradient ? t.bgGradient : 'none');
+  body && body.classList.add('themed');
+}
+
+// Refresh the theme based on current state. Active profile beats current tab
+// so when something is live, the app reflects what's actually on Discord.
+function refreshAppTheme() {
+  let target = null;
+  if (state.liveProfileId) {
+    target = state.profiles.find(p => p.id === state.liveProfileId) || null;
+  }
+  if (!target) target = currentProfile();
+  applyThemeFromProfile(target);
 }
 
 async function saveStore() {
@@ -192,6 +272,7 @@ function switchTab(i) {
   state.activeTab = i;
   renderForm();
   renderTabs();
+  refreshAppTheme();
   saveStore();
 }
 
@@ -249,6 +330,7 @@ function renderForm() {
   updateTimestampVisibility();
   updateActionButtons();
   renderPreview();
+  renderThemeEditor();
 }
 
 function updateCounter(inputId, counterId, max) {
@@ -605,6 +687,7 @@ async function activate() {
   updateStatus(`Live: ${p.name}`, 'online');
   updateActionButtons();
   renderTabs();
+  refreshAppTheme();
 }
 
 async function deactivate() {
@@ -613,6 +696,7 @@ async function deactivate() {
   updateStatus('No profile active', 'offline');
   updateActionButtons();
   renderTabs();
+  refreshAppTheme();
 }
 
 async function updateLive() {
@@ -722,6 +806,22 @@ async function init() {
   // Auto Presence wiring
   setupAutoPresenceView();
 
+  // Profile Theme editor wiring (v1.7.0)
+  setupThemeEditor();
+  refreshAppTheme();
+
+  // v1.7.0 — Hotkeys / Idle / Game UI
+  setupHotkeysUI();
+  setupIdleUI();
+  setupGameUI();
+  // Live updates from main process (game scanner running flags, etc.)
+  if (window.multirp && window.multirp.extSettings && window.multirp.extSettings.onChanged) {
+    window.multirp.extSettings.onChanged((s) => {
+      extState = s || extState;
+      refreshExtUI();
+    });
+  }
+
   document.getElementById('openDevPortal').onclick = (e) => {
     e.preventDefault();
     // Renderer is context-isolated so `require` is unavailable here.
@@ -804,7 +904,25 @@ async function init() {
     updateStatus('Disconnected', 'offline');
     updateActionButtons();
     renderTabs();
+    refreshAppTheme();
   });
+
+  // When auto-presence (or any other engine in main) flips the active profile,
+  // sync our local state so theme + tabs reflect reality.
+  if (window.multirp.onActiveChanged) {
+    window.multirp.onActiveChanged((payload) => {
+      if (!payload) return;
+      state.liveProfileId = payload.activeProfileId || null;
+      const idx = state.profiles.findIndex(p => p.id === state.liveProfileId);
+      if (idx >= 0) state.activeTab = idx;
+      renderForm();
+      renderTabs();
+      refreshAppTheme();
+      updateActionButtons();
+      const liveProfile = state.profiles.find(p => p.id === state.liveProfileId);
+      if (liveProfile) updateStatus(`Live: ${liveProfile.name}`, 'online');
+    });
+  }
 
   updateStatus('No profile active', 'offline');
 }
@@ -1507,6 +1625,150 @@ function refreshUpdateDot() {
   dot.hidden = !(hasNew && !state.hasSeenLatestUpdate);
 }
 
+// =============================================================
+// Profile Theme editor (v1.7.0)
+// =============================================================
+//
+// Field IDs in the editor map to keys on profile.theme. Each color has a
+// linked color-picker + hex input pair that stay in sync. Live preview means
+// any change instantly reflects in the running app.
+
+const THEME_FIELDS = [
+  ['themeAccent',      'themeAccentHex',      'accent'],
+  ['themeAccentHover', 'themeAccentHoverHex', 'accentHover'],
+  ['themeBg1',         'themeBg1Hex',         'bg1'],
+  ['themeBg2',         'themeBg2Hex',         'bg2'],
+  ['themeBg3',         'themeBg3Hex',         'bg3'],
+  ['themeBorder',      'themeBorderHex',      'border'],
+  ['themeText',        'themeTextHex',        'text'],
+  ['themeTextDim',     'themeTextDimHex',     'textDim']
+];
+
+const THEME_PRESETS = {
+  spiritual: {
+    enabled: true,
+    accent: '#b993ff', accentHover: '#cdaeff',
+    bg1: '#1a1428', bg2: '#241936', bg3: '#2d1f44',
+    border: '#3d2d5a', text: '#ece4ff', textDim: '#a89bc4',
+    bgGradient: 'linear-gradient(135deg, #1a1428 0%, #2d1f44 100%)'
+  },
+  dragon: {
+    enabled: true,
+    accent: '#ff6b3d', accentHover: '#ff8761',
+    bg1: '#1c1410', bg2: '#28190f', bg3: '#3a2316',
+    border: '#52301b', text: '#ffe9dc', textDim: '#c4a08a',
+    bgGradient: 'linear-gradient(135deg, #1c1410 0%, #3a1f0e 100%)'
+  },
+  ocean: {
+    enabled: true,
+    accent: '#4dd0e1', accentHover: '#6fdfee',
+    bg1: '#0d1d24', bg2: '#142932', bg3: '#1c3742',
+    border: '#2c5060', text: '#e0f4f8', textDim: '#8eb4c0',
+    bgGradient: 'linear-gradient(135deg, #0d1d24 0%, #1a3a4a 100%)'
+  },
+  sakura: {
+    enabled: true,
+    accent: '#f48fb1', accentHover: '#f7a9c4',
+    bg1: '#241418', bg2: '#321922', bg3: '#42222e',
+    border: '#5e3144', text: '#ffe4ec', textDim: '#caa1b3',
+    bgGradient: 'linear-gradient(135deg, #241418 0%, #4a1f30 100%)'
+  }
+};
+
+function renderThemeEditor() {
+  const p = currentProfile();
+  if (!p) return;
+  if (!p.theme) p.theme = { ...DEFAULT_PROFILE_THEME };
+
+  document.getElementById('themeEnabled').checked = !!p.theme.enabled;
+
+  for (const [colorId, hexId, key] of THEME_FIELDS) {
+    const val = p.theme[key] || DEFAULT_PROFILE_THEME[key];
+    document.getElementById(colorId).value = val;
+    document.getElementById(hexId).value = val;
+  }
+  document.getElementById('themeGradient').value = p.theme.bgGradient || '';
+}
+
+function normalizeHex(v) {
+  if (!v) return null;
+  let s = String(v).trim();
+  if (!s.startsWith('#')) s = '#' + s;
+  // Accept #abc or #aabbcc
+  if (/^#[0-9a-fA-F]{3}$/.test(s)) {
+    s = '#' + s[1] + s[1] + s[2] + s[2] + s[3] + s[3];
+  }
+  return /^#[0-9a-fA-F]{6}$/.test(s) ? s.toLowerCase() : null;
+}
+
+function setupThemeEditor() {
+  // Wire color/hex pairs to update both inputs + the live profile + the app
+  for (const [colorId, hexId, key] of THEME_FIELDS) {
+    const colorEl = document.getElementById(colorId);
+    const hexEl = document.getElementById(hexId);
+    if (!colorEl || !hexEl) continue;
+
+    colorEl.addEventListener('input', () => {
+      const v = colorEl.value;
+      hexEl.value = v;
+      const p = currentProfile();
+      if (!p.theme) p.theme = { ...DEFAULT_PROFILE_THEME };
+      p.theme[key] = v;
+      refreshAppTheme();
+      saveStore();
+    });
+
+    hexEl.addEventListener('input', () => {
+      const norm = normalizeHex(hexEl.value);
+      if (!norm) return;
+      colorEl.value = norm;
+      const p = currentProfile();
+      if (!p.theme) p.theme = { ...DEFAULT_PROFILE_THEME };
+      p.theme[key] = norm;
+      refreshAppTheme();
+      saveStore();
+    });
+  }
+
+  document.getElementById('themeEnabled').addEventListener('change', (e) => {
+    const p = currentProfile();
+    if (!p.theme) p.theme = { ...DEFAULT_PROFILE_THEME };
+    p.theme.enabled = e.target.checked;
+    refreshAppTheme();
+    saveStore();
+  });
+
+  document.getElementById('themeGradient').addEventListener('input', (e) => {
+    const p = currentProfile();
+    if (!p.theme) p.theme = { ...DEFAULT_PROFILE_THEME };
+    p.theme.bgGradient = e.target.value;
+    refreshAppTheme();
+    saveStore();
+  });
+
+  // Presets
+  const applyPreset = (presetKey) => {
+    const preset = THEME_PRESETS[presetKey];
+    if (!preset) return;
+    const p = currentProfile();
+    p.theme = { ...DEFAULT_PROFILE_THEME, ...preset };
+    renderThemeEditor();
+    refreshAppTheme();
+    saveStore();
+  };
+  document.getElementById('themePresetSpiritual').onclick = () => applyPreset('spiritual');
+  document.getElementById('themePresetDragon').onclick    = () => applyPreset('dragon');
+  document.getElementById('themePresetOcean').onclick     = () => applyPreset('ocean');
+  document.getElementById('themePresetSakura').onclick    = () => applyPreset('sakura');
+  document.getElementById('themePresetReset').onclick = () => {
+    const p = currentProfile();
+    p.theme = { ...DEFAULT_PROFILE_THEME };
+    renderThemeEditor();
+    refreshAppTheme();
+    saveStore();
+  };
+}
+
 // Catch any unhandled error in init so the window shows something instead of pure grey.
 init().catch((e) => {
   console.error('Init failed:', e);
@@ -1524,3 +1786,408 @@ window.addEventListener('error', (ev) => {
 window.addEventListener('unhandledrejection', (ev) => {
   console.error('Unhandled rejection:', ev.reason);
 });
+
+// =============================================================
+// v1.7.0 — Hotkeys / Idle / Game Detection UI
+// =============================================================
+
+let extState = {
+  hotkeys: {
+    cycleNext: '', jumpProfile1: '', jumpProfile2: '', jumpProfile3: '',
+    jumpProfile4: '', jumpProfile5: '', toggleAuto: '', showWindow: '', toggleOnTop: ''
+  },
+  idle: { enabled: false, onLock: true, onSystemIdle: false, afterMinutes: 10, idleProfileId: null },
+  game: { alwaysOnTop: false, alwaysOnTopAuto: false, autoActivate: false, mappings: [] }
+};
+
+const HOTKEY_DEFS = [
+  { key: 'cycleNext',    label: 'Cycle to next profile',         desc: 'Activates the next profile in the list (wraps around).' },
+  { key: 'jumpProfile1', label: 'Jump to profile slot 1',        desc: 'Activate the profile in slot 1.' },
+  { key: 'jumpProfile2', label: 'Jump to profile slot 2',        desc: 'Activate the profile in slot 2.' },
+  { key: 'jumpProfile3', label: 'Jump to profile slot 3',        desc: 'Activate the profile in slot 3.' },
+  { key: 'jumpProfile4', label: 'Jump to profile slot 4',        desc: 'Activate the profile in slot 4.' },
+  { key: 'jumpProfile5', label: 'Jump to profile slot 5',        desc: 'Activate the profile in slot 5.' },
+  { key: 'toggleAuto',   label: 'Toggle Auto Presence',          desc: 'Pause / resume the auto-presence engine.' },
+  { key: 'showWindow',   label: 'Show / focus MultiRP window',   desc: 'Bring MultiRP to the front from anywhere.' },
+  { key: 'toggleOnTop',  label: 'Toggle always-on-top overlay',  desc: 'Pin or un-pin MultiRP above other windows.' }
+];
+
+// -------- Accelerator capture --------
+// Keys we never accept on their own (must be combined with a modifier)
+const FORBIDDEN_BARE_KEYS = new Set([
+  'Control', 'Shift', 'Alt', 'Meta', 'CapsLock', 'NumLock', 'ScrollLock',
+  'OS', 'Hyper', 'Super', 'ContextMenu', 'Dead', 'Unidentified', 'Process'
+]);
+
+function eventToAccelerator(e) {
+  const parts = [];
+  // CommandOrControl handles both Win/Linux Ctrl and macOS Cmd
+  if (e.ctrlKey || e.metaKey) parts.push('CommandOrControl');
+  if (e.altKey) parts.push('Alt');
+  if (e.shiftKey) parts.push('Shift');
+
+  let key = e.key;
+  if (FORBIDDEN_BARE_KEYS.has(key)) return null; // modifier-only press
+  // Map function & arrow keys to Electron's accelerator vocabulary
+  if (/^F\d{1,2}$/.test(key)) {
+    parts.push(key);
+  } else if (key === ' ' || e.code === 'Space') {
+    parts.push('Space');
+  } else if (key === 'ArrowUp') parts.push('Up');
+  else if (key === 'ArrowDown') parts.push('Down');
+  else if (key === 'ArrowLeft') parts.push('Left');
+  else if (key === 'ArrowRight') parts.push('Right');
+  else if (key === 'Escape') parts.push('Escape');
+  else if (key === 'Enter') parts.push('Enter');
+  else if (key === 'Tab') parts.push('Tab');
+  else if (key === 'Backspace') parts.push('Backspace');
+  else if (key === 'Delete') parts.push('Delete');
+  else if (key === 'Home') parts.push('Home');
+  else if (key === 'End') parts.push('End');
+  else if (key === 'PageUp') parts.push('PageUp');
+  else if (key === 'PageDown') parts.push('PageDown');
+  else if (key.length === 1) {
+    // Letters & digits & punctuation — uppercase letters per Electron docs
+    parts.push(key.length === 1 && /[a-z]/.test(key) ? key.toUpperCase() : key);
+  } else {
+    parts.push(key);
+  }
+
+  // Require at least one modifier for letters/digits to avoid stomping on typing.
+  // Function keys, escape, etc. are fine bare.
+  const modifierCount = parts.length - 1;
+  const lastPart = parts[parts.length - 1];
+  const isFunctionKey = /^F\d{1,2}$/.test(lastPart);
+  if (modifierCount === 0 && !isFunctionKey) return null;
+  return parts.join('+');
+}
+
+function findHotkeyConflicts(hotkeys) {
+  // Returns { accelerator: [actionKeys, ...] } for any accelerator bound to >1 action
+  const seen = {};
+  for (const [k, v] of Object.entries(hotkeys || {})) {
+    if (!v) continue;
+    if (!seen[v]) seen[v] = [];
+    seen[v].push(k);
+  }
+  const conflicts = {};
+  for (const [accel, keys] of Object.entries(seen)) {
+    if (keys.length > 1) conflicts[accel] = keys;
+  }
+  return conflicts;
+}
+
+function setupHotkeysUI() {
+  const list = document.getElementById('hotkeyList');
+  if (!list) return;
+
+  // Render rows once; binding handlers live across renders.
+  list.innerHTML = HOTKEY_DEFS.map(def => `
+    <div class="hotkey-row" data-key="${def.key}">
+      <div class="hotkey-row-label">
+        <div class="hotkey-row-title">${def.label}</div>
+        <div class="hotkey-row-desc">${def.desc}</div>
+      </div>
+      <button class="hotkey-bind unset" data-action="record">Click to record</button>
+      <button class="hotkey-clear" data-action="clear" title="Clear shortcut">✕</button>
+    </div>
+  `).join('');
+
+  list.querySelectorAll('.hotkey-row').forEach(row => {
+    const key = row.getAttribute('data-key');
+    const recordBtn = row.querySelector('[data-action="record"]');
+    const clearBtn = row.querySelector('[data-action="clear"]');
+
+    recordBtn.addEventListener('click', () => {
+      // Avoid double-record state if user spams clicks
+      if (recordBtn.classList.contains('recording')) return;
+      recordBtn.classList.add('recording');
+      recordBtn.textContent = 'Press a combo… (Esc to cancel)';
+
+      const onKey = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (ev.key === 'Escape' && !ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
+          cleanup();
+          renderHotkeyButton(recordBtn, extState.hotkeys[key] || '');
+          return;
+        }
+        const accel = eventToAccelerator(ev);
+        if (!accel) return; // wait for a real key
+        cleanup();
+        const next = { ...(extState.hotkeys || {}), [key]: accel };
+        persistHotkeys(next);
+      };
+
+      const cleanup = () => {
+        window.removeEventListener('keydown', onKey, true);
+        recordBtn.classList.remove('recording');
+      };
+      window.addEventListener('keydown', onKey, true);
+    });
+
+    clearBtn.addEventListener('click', () => {
+      const next = { ...(extState.hotkeys || {}), [key]: '' };
+      persistHotkeys(next);
+    });
+  });
+
+  // Initial paint from current state — load happens in refreshExtUI() after fetch.
+  loadExtSettingsIntoUI();
+}
+
+function renderHotkeyButton(btn, accel) {
+  if (accel) {
+    btn.textContent = accel;
+    btn.classList.remove('unset');
+  } else {
+    btn.textContent = 'Click to record';
+    btn.classList.add('unset');
+  }
+}
+
+async function persistHotkeys(nextHotkeys) {
+  extState.hotkeys = nextHotkeys;
+  try {
+    const res = await window.multirp.extSettings.set({ hotkeys: nextHotkeys });
+    if (res) extState = res;
+  } catch (e) {
+    console.error('Failed to persist hotkeys', e);
+  }
+  refreshExtUI();
+}
+
+function refreshHotkeysUI() {
+  const list = document.getElementById('hotkeyList');
+  if (!list) return;
+  const conflicts = findHotkeyConflicts(extState.hotkeys);
+  list.querySelectorAll('.hotkey-row').forEach(row => {
+    const key = row.getAttribute('data-key');
+    const btn = row.querySelector('.hotkey-bind');
+    const accel = (extState.hotkeys || {})[key] || '';
+    renderHotkeyButton(btn, accel);
+    if (accel && conflicts[accel]) {
+      row.classList.add('conflict');
+    } else {
+      row.classList.remove('conflict');
+    }
+  });
+
+  const banner = document.getElementById('hotkeyConflict');
+  if (banner) {
+    const list = Object.entries(conflicts);
+    if (!list.length) {
+      banner.hidden = true;
+      banner.textContent = '';
+    } else {
+      banner.hidden = false;
+      banner.textContent = list
+        .map(([accel, keys]) => `${accel} is bound to multiple actions (${keys.join(', ')}). Only one will fire.`)
+        .join(' ');
+    }
+  }
+}
+
+// -------- Idle UI --------
+
+function setupIdleUI() {
+  const onLock = document.getElementById('idleOnLock');
+  const onSysIdle = document.getElementById('idleOnSystemIdle');
+  const mins = document.getElementById('idleAfterMinutes');
+  const sel = document.getElementById('idleProfileSelect');
+
+  if (onLock) onLock.addEventListener('change', persistIdleFromUI);
+  if (onSysIdle) onSysIdle.addEventListener('change', persistIdleFromUI);
+  if (mins) mins.addEventListener('change', persistIdleFromUI);
+  if (sel) sel.addEventListener('change', persistIdleFromUI);
+}
+
+async function persistIdleFromUI() {
+  const onLock = document.getElementById('idleOnLock');
+  const onSysIdle = document.getElementById('idleOnSystemIdle');
+  const mins = document.getElementById('idleAfterMinutes');
+  const sel = document.getElementById('idleProfileSelect');
+
+  const next = {
+    onLock: !!(onLock && onLock.checked),
+    onSystemIdle: !!(onSysIdle && onSysIdle.checked),
+    afterMinutes: Math.max(1, Math.min(240, Number(mins && mins.value) || 10)),
+    idleProfileId: (sel && sel.value) || null
+  };
+  // Idle is enabled if any trigger is on AND we have a target profile
+  next.enabled = (next.onLock || next.onSystemIdle) && !!next.idleProfileId;
+
+  try {
+    const res = await window.multirp.extSettings.set({ idle: next });
+    if (res) extState = res;
+  } catch (e) {
+    console.error('Failed to persist idle settings', e);
+  }
+  refreshExtUI();
+}
+
+function refreshIdleUI() {
+  const onLock = document.getElementById('idleOnLock');
+  const onSysIdle = document.getElementById('idleOnSystemIdle');
+  const mins = document.getElementById('idleAfterMinutes');
+  const sel = document.getElementById('idleProfileSelect');
+  const idle = extState.idle || {};
+
+  if (onLock) onLock.checked = !!idle.onLock;
+  if (onSysIdle) onSysIdle.checked = !!idle.onSystemIdle;
+  if (mins) mins.value = Number(idle.afterMinutes) || 10;
+
+  if (sel) {
+    const profiles = (state && Array.isArray(state.profiles)) ? state.profiles : [];
+    const current = idle.idleProfileId || '';
+    sel.innerHTML = '<option value="">— pick a profile —</option>' +
+      profiles.map(p => {
+        const name = (p.name || 'Untitled').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+        return `<option value="${p.id}"${p.id === current ? ' selected' : ''}>${name}</option>`;
+      }).join('');
+  }
+}
+
+// -------- Game Detection UI --------
+
+function setupGameUI() {
+  const aot = document.getElementById('alwaysOnTop');
+  const aotAuto = document.getElementById('alwaysOnTopAuto');
+  const autoAct = document.getElementById('gameAutoActivate');
+  const addBtn = document.getElementById('addGameMapping');
+
+  if (aot) aot.addEventListener('change', persistGameTogglesFromUI);
+  if (aotAuto) aotAuto.addEventListener('change', persistGameTogglesFromUI);
+  if (autoAct) autoAct.addEventListener('change', persistGameTogglesFromUI);
+
+  if (addBtn) {
+    addBtn.addEventListener('click', async () => {
+      const mappings = (extState.game && Array.isArray(extState.game.mappings)) ? extState.game.mappings.slice() : [];
+      mappings.push({
+        id: 'g_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        exe: '',
+        profileId: '',
+        running: false
+      });
+      await persistGameMappings(mappings);
+    });
+  }
+}
+
+async function persistGameTogglesFromUI() {
+  const aot = document.getElementById('alwaysOnTop');
+  const aotAuto = document.getElementById('alwaysOnTopAuto');
+  const autoAct = document.getElementById('gameAutoActivate');
+  const next = {
+    alwaysOnTop: !!(aot && aot.checked),
+    alwaysOnTopAuto: !!(aotAuto && aotAuto.checked),
+    autoActivate: !!(autoAct && autoAct.checked)
+  };
+  try {
+    const res = await window.multirp.extSettings.set({ game: next });
+    if (res) extState = res;
+  } catch (e) {
+    console.error('Failed to persist game toggles', e);
+  }
+  refreshExtUI();
+}
+
+async function persistGameMappings(mappings) {
+  // Strip the volatile `running` flag — main process owns that.
+  const clean = mappings.map(m => ({
+    id: m.id,
+    exe: (m.exe || '').trim(),
+    profileId: m.profileId || ''
+  }));
+  try {
+    const res = await window.multirp.extSettings.set({ game: { mappings: clean } });
+    if (res) extState = res;
+  } catch (e) {
+    console.error('Failed to persist game mappings', e);
+  }
+  refreshExtUI();
+}
+
+function refreshGameUI() {
+  const aot = document.getElementById('alwaysOnTop');
+  const aotAuto = document.getElementById('alwaysOnTopAuto');
+  const autoAct = document.getElementById('gameAutoActivate');
+  const list = document.getElementById('gameMappingsList');
+  const game = extState.game || {};
+
+  if (aot) aot.checked = !!game.alwaysOnTop;
+  if (aotAuto) aotAuto.checked = !!game.alwaysOnTopAuto;
+  if (autoAct) autoAct.checked = !!game.autoActivate;
+
+  if (!list) return;
+  const mappings = Array.isArray(game.mappings) ? game.mappings : [];
+  if (!mappings.length) {
+    list.innerHTML = '<div class="game-mappings-empty">No tracked games yet. Click <strong>+ Add Game</strong> to start.</div>';
+    return;
+  }
+
+  const profiles = (state && Array.isArray(state.profiles)) ? state.profiles : [];
+  list.innerHTML = mappings.map((m, idx) => {
+    const exeAttr = (m.exe || '').replace(/"/g, '&quot;');
+    const dotClass = m.running ? 'game-mapping-running on' : 'game-mapping-running';
+    const dotTitle = m.running ? 'Running right now' : 'Not detected';
+    const profOpts = '<option value="">— pick a profile —</option>' +
+      profiles.map(p => {
+        const safe = (p.name || 'Untitled').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+        return `<option value="${p.id}"${p.id === m.profileId ? ' selected' : ''}>${safe}</option>`;
+      }).join('');
+    return `
+      <div class="game-mapping-row" data-idx="${idx}">
+        <span class="${dotClass}" title="${dotTitle}"></span>
+        <input type="text" class="game-mapping-name" placeholder="e.g. Genshin.exe" value="${exeAttr}" />
+        <span class="game-mapping-arrow">→</span>
+        <select class="game-mapping-profile">${profOpts}</select>
+        <button class="game-mapping-del" title="Remove">✕</button>
+      </div>
+    `;
+  }).join('');
+
+  // Wire row controls
+  list.querySelectorAll('.game-mapping-row').forEach(row => {
+    const idx = Number(row.getAttribute('data-idx'));
+    const exeInput = row.querySelector('.game-mapping-name');
+    const profSel = row.querySelector('.game-mapping-profile');
+    const delBtn = row.querySelector('.game-mapping-del');
+
+    const commit = () => {
+      const next = (extState.game && Array.isArray(extState.game.mappings)) ? extState.game.mappings.slice() : [];
+      if (!next[idx]) return;
+      next[idx] = {
+        ...next[idx],
+        exe: exeInput.value.trim(),
+        profileId: profSel.value || ''
+      };
+      persistGameMappings(next);
+    };
+    exeInput.addEventListener('change', commit);
+    profSel.addEventListener('change', commit);
+    delBtn.addEventListener('click', () => {
+      const next = (extState.game && Array.isArray(extState.game.mappings)) ? extState.game.mappings.slice() : [];
+      next.splice(idx, 1);
+      persistGameMappings(next);
+    });
+  });
+}
+
+// -------- Combined refresh + initial load --------
+
+async function loadExtSettingsIntoUI() {
+  try {
+    const s = await window.multirp.extSettings.get();
+    if (s) extState = s;
+  } catch (e) {
+    console.error('Failed to load ext settings', e);
+  }
+  refreshExtUI();
+}
+
+function refreshExtUI() {
+  refreshHotkeysUI();
+  refreshIdleUI();
+  refreshGameUI();
+}

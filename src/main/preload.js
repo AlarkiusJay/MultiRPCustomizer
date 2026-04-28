@@ -74,6 +74,17 @@ contextBridge.exposeInMainWorld('multirp', {
     }
   },
 
+  // v1.7.0 — Hotkeys + Idle + Game Detection + Always-On-Top
+  extSettings: {
+    get: () => ipcRenderer.invoke('extSettings:get'),
+    set: (cfg) => ipcRenderer.invoke('extSettings:set', cfg),
+    onChanged: (cb) => {
+      const listener = (_e, s) => cb(s);
+      ipcRenderer.on('extSettings:changed', listener);
+      return () => ipcRenderer.removeListener('extSettings:changed', listener);
+    }
+  },
+
   // Auto-updater bridge
   updates: {
     status: () => ipcRenderer.invoke('updates:status'),

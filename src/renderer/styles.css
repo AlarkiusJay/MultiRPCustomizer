@@ -1332,3 +1332,371 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
   color: #ff9aa3;
   border-color: #ff9aa3;
 }
+
+/* =========================================================
+   v1.7.0 — Profile Themes, Hotkeys, Idle, Game Detection
+   ========================================================= */
+
+/* When a custom theme is active, body bg uses the gradient if set */
+body.themed {
+  background-image: var(--profile-bg-image, none);
+  background-size: cover;
+  background-attachment: fixed;
+}
+
+/* ----- Profile Theme Editor ----- */
+.theme-editor {
+  margin-top: 16px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.theme-editor[open] { border-color: var(--accent); }
+.theme-editor-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+.theme-editor-summary::-webkit-details-marker { display: none; }
+.theme-editor-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.theme-editor-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.theme-editor-hint {
+  flex: 1 1 auto;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  font-style: italic;
+  min-width: 0;
+}
+.theme-editor-chevron {
+  font-size: 18px;
+  color: var(--text-dim);
+  transition: transform 0.2s;
+}
+.theme-editor[open] .theme-editor-chevron {
+  transform: rotate(90deg);
+}
+.theme-editor-body {
+  padding: 0 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.theme-master-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+.theme-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 11.5px;
+}
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+@media (max-width: 980px) {
+  .theme-grid { grid-template-columns: repeat(2, 1fr); }
+}
+.theme-color {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.theme-color label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 500;
+}
+.theme-color-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.theme-color-input input[type="color"] {
+  width: 36px;
+  height: 32px;
+  padding: 2px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.theme-color-input input[type="text"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.theme-color-input input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.theme-gradient-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.theme-gradient-row label {
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 500;
+}
+.theme-gradient-row input {
+  padding: 8px 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.theme-gradient-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.theme-gradient-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* ----- Idle Detection extras ----- */
+.idle-mins-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ----- Game Detection mappings ----- */
+.section-blurb {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin-bottom: 10px;
+  margin-top: -2px;
+}
+.section-blurb code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  background: var(--bg-2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10.5px;
+}
+.game-mappings {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.game-mappings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 500;
+  margin-bottom: 10px;
+}
+.game-mappings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.game-mapping-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.game-mapping-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 8px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.game-mapping-name:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.game-mapping-arrow {
+  color: var(--text-dim);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.game-mapping-profile {
+  flex: 0 1 180px;
+  padding: 5px 8px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.game-mapping-profile:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.game-mapping-running {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex-shrink: 0;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.game-mapping-running.on {
+  background: var(--online);
+  box-shadow: 0 0 6px var(--online);
+}
+.game-mapping-del {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.game-mapping-del:hover {
+  color: #ff7a85;
+  border-color: #ff7a85;
+}
+.game-mappings-empty {
+  padding: 14px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--bg-2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  font-style: italic;
+}
+
+/* ----- Hotkeys ----- */
+.hotkey-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hotkey-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.hotkey-row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hotkey-row-title {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 500;
+}
+.hotkey-row-desc {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.hotkey-bind {
+  padding: 5px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  cursor: pointer;
+  min-width: 140px;
+  text-align: center;
+  transition: all 0.15s;
+}
+.hotkey-bind:hover {
+  border-color: var(--accent);
+}
+.hotkey-bind.recording {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  animation: hotkey-pulse 1.2s ease-in-out infinite;
+}
+.hotkey-bind.unset {
+  color: var(--text-dim);
+  font-style: italic;
+}
+@keyframes hotkey-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(124, 140, 255, 0.5); }
+  50%      { box-shadow: 0 0 0 6px rgba(124, 140, 255, 0); }
+}
+.hotkey-clear {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.hotkey-clear:hover {
+  color: #ff7a85;
+  border-color: #ff7a85;
+}
+.hotkey-conflict {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: rgba(255, 122, 133, 0.10);
+  border: 1px solid rgba(255, 122, 133, 0.40);
+  border-radius: var(--radius-sm);
+  color: #ff9aa3;
+  font-size: 12px;
+}

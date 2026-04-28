@@ -149,6 +149,95 @@
           </div>
         </div>
 
+        <!-- Profile Theme editor (v1.7.0) -->
+        <details class="theme-editor" id="themeEditor">
+          <summary class="theme-editor-summary">
+            <span class="theme-editor-icon" aria-hidden="true">🎨</span>
+            <span class="theme-editor-title">Profile Theme</span>
+            <span class="theme-editor-hint" id="themeEditorHint">Customize this profile's app skin — overrides the default theme when active</span>
+            <span class="theme-editor-chevron" aria-hidden="true">›</span>
+          </summary>
+          <div class="theme-editor-body">
+            <div class="theme-master-row">
+              <label class="updates-toggle">
+                <input type="checkbox" id="themeEnabled" />
+                <span class="updates-toggle-track"><span class="updates-toggle-thumb"></span></span>
+                <span class="updates-toggle-label">Enable custom theme for this profile</span>
+              </label>
+              <div class="theme-actions">
+                <button type="button" class="btn ghost btn-sm" id="themePresetSpiritual">🌸 Spiritual</button>
+                <button type="button" class="btn ghost btn-sm" id="themePresetDragon">🐉 Dragon</button>
+                <button type="button" class="btn ghost btn-sm" id="themePresetOcean">🌊 Ocean</button>
+                <button type="button" class="btn ghost btn-sm" id="themePresetSakura">🌸 Sakura</button>
+                <button type="button" class="btn ghost btn-sm" id="themePresetReset">↻ Reset</button>
+              </div>
+            </div>
+            <div class="theme-grid">
+              <div class="theme-color">
+                <label for="themeAccent">Accent</label>
+                <div class="theme-color-input">
+                  <input type="color" id="themeAccent" value="#7c8cff" />
+                  <input type="text" id="themeAccentHex" maxlength="7" placeholder="#7c8cff" />
+                </div>
+              </div>
+              <div class="theme-color">
+                <label for="themeAccentHover">Accent Hover</label>
+                <div class="theme-color-input">
+                  <input type="color" id="themeAccentHover" value="#93a0ff" />
+                  <input type="text" id="themeAccentHoverHex" maxlength="7" placeholder="#93a0ff" />
+                </div>
+              </div>
+              <div class="theme-color">
+                <label for="themeBg1">Background</label>
+                <div class="theme-color-input">
+                  <input type="color" id="themeBg1" value="#1a1a1d" />
+                  <input type="text" id="themeBg1Hex" maxlength="7" placeholder="#1a1a1d" />
+                </div>
+              </div>
+              <div class="theme-color">
+                <label for="themeBg2">Panel</label>
+                <div class="theme-color-input">
+                  <input type="color" id="themeBg2" value="#212124" />
+                  <input type="text" id="themeBg2Hex" maxlength="7" placeholder="#212124" />
+                </div>
+              </div>
+              <div class="theme-color">
+                <label for="themeBg3">Surface</label>
+                <div class="theme-color-input">
+                  <input type="color" id="themeBg3" value="#28282c" />
+                  <input type="text" id="themeBg3Hex" maxlength="7" placeholder="#28282c" />
+                </div>
+              </div>
+              <div class="theme-color">
+                <label for="themeBorder">Border</label>
+                <div class="theme-color-input">
+                  <input type="color" id="themeBorder" value="#38383d" />
+                  <input type="text" id="themeBorderHex" maxlength="7" placeholder="#38383d" />
+                </div>
+              </div>
+              <div class="theme-color">
+                <label for="themeText">Text</label>
+                <div class="theme-color-input">
+                  <input type="color" id="themeText" value="#e6e8ee" />
+                  <input type="text" id="themeTextHex" maxlength="7" placeholder="#e6e8ee" />
+                </div>
+              </div>
+              <div class="theme-color">
+                <label for="themeTextDim">Dim Text</label>
+                <div class="theme-color-input">
+                  <input type="color" id="themeTextDim" value="#a4a8b3" />
+                  <input type="text" id="themeTextDimHex" maxlength="7" placeholder="#a4a8b3" />
+                </div>
+              </div>
+            </div>
+            <div class="theme-gradient-row">
+              <label for="themeGradient">Background Gradient (optional CSS)</label>
+              <input type="text" id="themeGradient" placeholder="linear-gradient(135deg, #1a1a1d 0%, #2d1f3a 100%)" />
+              <div class="theme-gradient-hint">Any valid CSS background-image value. Leave blank for solid color.</div>
+            </div>
+          </div>
+        </details>
+
         <div class="actions">
           <button id="btnActivate" class="btn primary">Activate</button>
           <button id="btnUpdate" class="btn secondary" disabled>Update Live</button>
@@ -280,6 +369,99 @@
           </div>
         </div>
 
+        <!-- ===== Idle Detection (v1.7.0) ===== -->
+        <div class="updates-section">
+          <div class="updates-section-header">🌙 Idle Detection</div>
+          <div class="section-blurb">Auto-switch to your designated "away" profile when you go idle, and snap back instantly when you return.</div>
+          <div class="startup-rows">
+            <div class="startup-row">
+              <div class="startup-row-text">
+                <div class="startup-row-title">Switch to idle profile when computer locks / screen off</div>
+                <div class="startup-row-desc">Uses OS-level lock-screen and suspend events.</div>
+              </div>
+              <label class="updates-toggle">
+                <input type="checkbox" id="idleOnLock" />
+                <span class="updates-toggle-track"><span class="updates-toggle-thumb"></span></span>
+              </label>
+            </div>
+            <div class="startup-row">
+              <div class="startup-row-text">
+                <div class="startup-row-title">Switch when system is idle for X minutes</div>
+                <div class="startup-row-desc">No mouse or keyboard activity for the chosen number of minutes.</div>
+              </div>
+              <div class="idle-mins-row">
+                <input type="number" id="idleAfterMinutes" min="1" max="240" value="10" class="auto-interval-input" />
+                <span class="auto-interval-prefix">min</span>
+                <label class="updates-toggle">
+                  <input type="checkbox" id="idleOnSystemIdle" />
+                  <span class="updates-toggle-track"><span class="updates-toggle-thumb"></span></span>
+                </label>
+              </div>
+            </div>
+            <div class="startup-row">
+              <div class="startup-row-text">
+                <div class="startup-row-title">Idle profile</div>
+                <div class="startup-row-desc">Which profile to activate when idle. Snap-back returns to whatever was active before.</div>
+              </div>
+              <select id="idleProfileSelect" class="auto-rule-profile" style="max-width: 220px;"></select>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== Game Detection + Always-On-Top (v1.7.0) ===== -->
+        <div class="updates-section">
+          <div class="updates-section-header">🎮 Game Detection &amp; Overlay</div>
+          <div class="section-blurb">Float MultiRP above your games like a card stack. Optional: auto-activate a profile when a tracked game launches.</div>
+          <div class="startup-rows">
+            <div class="startup-row">
+              <div class="startup-row-text">
+                <div class="startup-row-title">Always on top (overlay over games)</div>
+                <div class="startup-row-desc">Pin the MultiRP window above other windows. Works for windowed and borderless games.</div>
+              </div>
+              <label class="updates-toggle">
+                <input type="checkbox" id="alwaysOnTop" />
+                <span class="updates-toggle-track"><span class="updates-toggle-thumb"></span></span>
+              </label>
+            </div>
+            <div class="startup-row">
+              <div class="startup-row-text">
+                <div class="startup-row-title">Auto-pin only when a tracked game is running</div>
+                <div class="startup-row-desc">Float-on-top kicks in only when MultiRP detects one of your tracked games. Un-pins when game closes.</div>
+              </div>
+              <label class="updates-toggle">
+                <input type="checkbox" id="alwaysOnTopAuto" />
+                <span class="updates-toggle-track"><span class="updates-toggle-thumb"></span></span>
+              </label>
+            </div>
+            <div class="startup-row">
+              <div class="startup-row-text">
+                <div class="startup-row-title">Auto-activate matching profile when game launches</div>
+                <div class="startup-row-desc">When MultiRP detects a tracked game start, switch to its mapped profile.</div>
+              </div>
+              <label class="updates-toggle">
+                <input type="checkbox" id="gameAutoActivate" />
+                <span class="updates-toggle-track"><span class="updates-toggle-thumb"></span></span>
+              </label>
+            </div>
+          </div>
+          <div class="game-mappings">
+            <div class="game-mappings-header">
+              <span>Tracked Games</span>
+              <button class="btn ghost btn-sm" id="addGameMapping">+ Add Game</button>
+            </div>
+            <div class="game-mappings-list" id="gameMappingsList"></div>
+            <div class="section-blurb">Add an executable name (e.g. <code>Genshin.exe</code>, <code>RobloxPlayerBeta.exe</code>) and pick which profile to activate. MultiRP scans every 5 seconds.</div>
+          </div>
+        </div>
+
+        <!-- ===== Custom Hotkeys (v1.7.0) ===== -->
+        <div class="updates-section">
+          <div class="updates-section-header">⌨ Custom Hotkeys</div>
+          <div class="section-blurb">Global keyboard shortcuts that work even when MultiRP is hidden. Click the keybind to record a new combo, or click the ✕ to clear it.</div>
+          <div class="hotkey-list" id="hotkeyList"></div>
+          <div class="hotkey-conflict" id="hotkeyConflict" hidden></div>
+        </div>
+
         <div class="updates-footer-note">
           MultiRP checks GitHub Releases at <a href="#" id="updRepoLink">AlarkiusJay/MultiRPCustomizer</a> on launch. Auto-install is on by default — toggle off to stay on your current version.
         </div>
@@ -408,7 +590,7 @@
     </main>
 
     <footer class="footer">
-      <span id="footerVersion">v1.6.0 · Built by Alarkius Elvya Jay</span>
+      <span id="footerVersion">v1.7.0 · Built by Alarkius Elvya Jay</span>
       <span class="footer-right">
         <a href="#" id="openHelp">Help &amp; Setup Guide</a>
       </span>

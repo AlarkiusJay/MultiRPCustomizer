@@ -5,9 +5,10 @@
  * You may obtain a copy of the License at
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-const { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell, Notification, powerMonitor, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { exec } = require('child_process');
 const RPC = require('discord-rpc');
 const { autoUpdater } = require('electron-updater');
 const profileFormats = require('./profile-formats');
@@ -1127,6 +1128,386 @@ ipcMain.handle('auto:set', async (_evt, partial) => {
   return autoConfig;
 });
 
+// =============================================================
+// v1.7.0: Settings v2 — hotkeys, idle, game detection, always-on-top
+// =============================================================
+//
+// Stored in a separate file so legacy settings.json stays clean and small.
+// Anything that's purely renderer-side display (theme, tab order) lives in
+// profiles.json. Anything that affects OS-level behavior lives here.
+
+const extSettingsFile = () => path.join(userDataPath(), 'settings-v2.json');
+
+const DEFAULT_HOTKEYS = {
+  cycleNext:    '',
+  jumpProfile1: '',
+  jumpProfile2: '',
+  jumpProfile3: '',
+  jumpProfile4: '',
+  jumpProfile5: '',
+  toggleAuto:   '',
+  showWindow:   '',
+  toggleOnTop:  ''
+};
+
+const DEFAULT_EXT_SETTINGS = {
+  hotkeys: { ...DEFAULT_HOTKEYS },
+  idle: {
+    enabled: false,
+    onLock: true,
+    onSystemIdle: false,
+    afterMinutes: 10,
+    idleProfileId: null
+  },
+  game: {
+    alwaysOnTop: false,
+    alwaysOnTopAuto: false,
+    autoActivate: false,
+    mappings: []  // [{id, exe, profileId, running:false}]
+  }
+};
+
+let extSettings = JSON.parse(JSON.stringify(DEFAULT_EXT_SETTINGS));
+
+function loadExtSettings() {
+  try {
+    if (fs.existsSync(extSettingsFile())) {
+      const raw = JSON.parse(fs.readFileSync(extSettingsFile(), 'utf-8'));
+      // Deep merge with defaults so new fields land in old configs
+      extSettings = {
+        hotkeys: { ...DEFAULT_HOTKEYS, ...(raw.hotkeys || {}) },
+        idle:    { ...DEFAULT_EXT_SETTINGS.idle, ...(raw.idle || {}) },
+        game:    { ...DEFAULT_EXT_SETTINGS.game, ...(raw.game || {}) }
+      };
+      // Sanitize mappings
+      if (!Array.isArray(extSettings.game.mappings)) extSettings.game.mappings = [];
+    }
+  } catch (e) {
+    console.error('Failed to load v2 settings:', e);
+    extSettings = JSON.parse(JSON.stringify(DEFAULT_EXT_SETTINGS));
+  }
+  return extSettings;
+}
+
+function saveExtSettings() {
+  try {
+    fs.mkdirSync(userDataPath(), { recursive: true });
+    fs.writeFileSync(extSettingsFile(), JSON.stringify(extSettings, null, 2));
+    return true;
+  } catch (e) {
+    console.error('Failed to save v2 settings:', e);
+    return false;
+  }
+}
+
+ipcMain.handle('extSettings:get', async () => {
+  return extSettings;
+});
+
+ipcMain.handle('extSettings:set', async (_evt, partial) => {
+  if (!partial || typeof partial !== 'object') return extSettings;
+  if (partial.hotkeys) extSettings.hotkeys = { ...extSettings.hotkeys, ...partial.hotkeys };
+  if (partial.idle)    extSettings.idle    = { ...extSettings.idle,    ...partial.idle };
+  if (partial.game)    extSettings.game    = { ...extSettings.game,    ...partial.game };
+  saveExtSettings();
+
+  // Re-apply side effects
+  reapplyHotkeys();
+  applyAlwaysOnTop();
+  return extSettings;
+});
+
+// =============================================================
+// Custom Hotkeys (v1.7.0) — globalShortcut wiring
+// =============================================================
+
+const HOTKEY_ACTIONS = {
+  cycleNext: () => cycleProfile(+1),
+  jumpProfile1: () => jumpToProfileSlot(0),
+  jumpProfile2: () => jumpToProfileSlot(1),
+  jumpProfile3: () => jumpToProfileSlot(2),
+  jumpProfile4: () => jumpToProfileSlot(3),
+  jumpProfile5: () => jumpToProfileSlot(4),
+  toggleAuto: () => toggleAutoFromHotkey(),
+  showWindow: () => showMainWindow(),
+  toggleOnTop: () => {
+    extSettings.game.alwaysOnTop = !extSettings.game.alwaysOnTop;
+    saveExtSettings();
+    applyAlwaysOnTop();
+    broadcastExtSettings();
+  }
+};
+
+async function cycleProfile(direction) {
+  const data = loadProfilesFromDisk();
+  const profiles = (data && Array.isArray(data.profiles)) ? data.profiles : [];
+  if (profiles.length === 0) return;
+  let idx = profiles.findIndex(p => p.id === activeProfileId);
+  if (idx < 0) idx = -1;
+  idx = ((idx + direction) % profiles.length + profiles.length) % profiles.length;
+  await connectProfile(profiles[idx]);
+  rebuildTrayMenu();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('rpc:activeChanged', { activeProfileId: profiles[idx].id, source: 'hotkey' });
+  }
+}
+
+async function jumpToProfileSlot(slot) {
+  const data = loadProfilesFromDisk();
+  const profiles = (data && Array.isArray(data.profiles)) ? data.profiles : [];
+  if (slot < 0 || slot >= profiles.length) return;
+  await connectProfile(profiles[slot]);
+  rebuildTrayMenu();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('rpc:activeChanged', { activeProfileId: profiles[slot].id, source: 'hotkey' });
+  }
+}
+
+function toggleAutoFromHotkey() {
+  if (!autoConfig.enabled) {
+    autoConfig.enabled = true;
+    autoConfig.paused = false;
+    saveAutoConfig();
+    startAutoEngine({ runImmediately: true });
+  } else {
+    autoConfig.paused = !autoConfig.paused;
+    saveAutoConfig();
+    if (autoConfig.paused) stopAutoEngine();
+    else startAutoEngine({ runImmediately: true });
+  }
+  // Notify renderer
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('auto:status', {
+      enabled: autoConfig.enabled,
+      paused: autoConfig.paused,
+      nextSwitchAt: autoConfig.nextSwitchAt,
+      lastActivatedProfileId: autoConfig.lastActivatedProfileId
+    });
+  }
+}
+
+function reapplyHotkeys() {
+  try {
+    globalShortcut.unregisterAll();
+  } catch (_) {}
+  const seen = new Set();
+  for (const [action, accel] of Object.entries(extSettings.hotkeys || {})) {
+    if (!accel || typeof accel !== 'string') continue;
+    if (seen.has(accel)) continue; // skip duplicate bindings
+    const fn = HOTKEY_ACTIONS[action];
+    if (!fn) continue;
+    try {
+      globalShortcut.register(accel, fn);
+      seen.add(accel);
+    } catch (e) {
+      console.warn(`Hotkey register failed for ${action} (${accel}):`, e.message);
+    }
+  }
+}
+
+function broadcastExtSettings() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('extSettings:changed', extSettings);
+  }
+}
+
+// =============================================================
+// Always-On-Top window flag (v1.7.0)
+// =============================================================
+//
+// Pin the main window above everything else — "card stack" behavior over
+// games. Use the highest level ("screen-saver") so it floats over fullscreen
+// borderless games on most platforms.
+
+function applyAlwaysOnTop() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const wantsOnTop = !!extSettings.game.alwaysOnTop;
+  // If autoOnTop is enabled, only pin when a tracked game is running
+  const shouldPin = wantsOnTop && (
+    !extSettings.game.alwaysOnTopAuto ||
+    (extSettings.game.mappings || []).some(m => m && m.running)
+  );
+  try {
+    mainWindow.setAlwaysOnTop(shouldPin, 'screen-saver');
+  } catch (_) {
+    try { mainWindow.setAlwaysOnTop(shouldPin); } catch (__) {}
+  }
+}
+
+// =============================================================
+// Game Detection (v1.7.0) — cross-platform process scanner
+// =============================================================
+
+let gameScanTimer = null;
+
+function listProcesses() {
+  return new Promise((resolve) => {
+    const isWin = process.platform === 'win32';
+    const cmd = isWin ? 'tasklist /FO CSV /NH' : 'ps -A -o comm';
+    exec(cmd, { timeout: 4000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+      if (err) { resolve([]); return; }
+      const lines = String(stdout || '').split(/\r?\n/);
+      const names = [];
+      for (const line of lines) {
+        if (!line) continue;
+        if (isWin) {
+          // "name.exe","PID",...
+          const m = line.match(/^"([^"]+)"/);
+          if (m) names.push(m[1]);
+        } else {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === 'COMMAND') continue;
+          // ps -A -o comm prints full path on macOS — take basename
+          names.push(trimmed.split('/').pop());
+        }
+      }
+      resolve(names);
+    });
+  });
+}
+
+async function scanGames() {
+  const mappings = extSettings.game.mappings || [];
+  if (mappings.length === 0) return;
+
+  const procs = (await listProcesses()).map(s => s.toLowerCase());
+  const procSet = new Set(procs);
+
+  let stateChanged = false;
+  let firstNewlyRunning = null;
+
+  for (const m of mappings) {
+    if (!m || !m.exe) continue;
+    const wasRunning = !!m.running;
+    const exe = String(m.exe).toLowerCase();
+    const nowRunning = procSet.has(exe);
+    if (wasRunning !== nowRunning) {
+      m.running = nowRunning;
+      stateChanged = true;
+      if (nowRunning && !firstNewlyRunning) firstNewlyRunning = m;
+    }
+  }
+
+  if (stateChanged) {
+    saveExtSettings();
+    broadcastExtSettings();
+    applyAlwaysOnTop();
+
+    // Auto-activate the matching profile if user opted in
+    if (firstNewlyRunning && extSettings.game.autoActivate && firstNewlyRunning.profileId) {
+      const data = loadProfilesFromDisk();
+      const profiles = (data && Array.isArray(data.profiles)) ? data.profiles : [];
+      const target = profiles.find(p => p.id === firstNewlyRunning.profileId);
+      if (target) {
+        await connectProfile(target);
+        rebuildTrayMenu();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('rpc:activeChanged', { activeProfileId: target.id, source: 'game' });
+        }
+      }
+    }
+  }
+}
+
+function startGameScanner() {
+  if (gameScanTimer) return;
+  gameScanTimer = setInterval(() => { scanGames().catch(() => {}); }, 5000);
+  // Run once immediately
+  scanGames().catch(() => {});
+}
+
+function stopGameScanner() {
+  if (gameScanTimer) { clearInterval(gameScanTimer); gameScanTimer = null; }
+}
+
+// =============================================================
+// Idle Detection (v1.7.0)
+// =============================================================
+//
+// Tracks whether the user is currently considered idle and what profile was
+// active before going idle, so we can restore it on resume.
+
+let idleState = {
+  isIdle: false,
+  prevProfileId: null,
+  systemIdleTimer: null
+};
+
+async function enterIdleState(reason) {
+  if (idleState.isIdle) return;
+  if (!extSettings.idle.enabled) return;
+  if (!extSettings.idle.idleProfileId) return;
+
+  idleState.isIdle = true;
+  idleState.prevProfileId = activeProfileId;
+
+  const data = loadProfilesFromDisk();
+  const profiles = (data && Array.isArray(data.profiles)) ? data.profiles : [];
+  const idleProfile = profiles.find(p => p.id === extSettings.idle.idleProfileId);
+  if (!idleProfile) return;
+
+  await connectProfile(idleProfile);
+  rebuildTrayMenu();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('rpc:activeChanged', { activeProfileId: idleProfile.id, source: 'idle:' + reason });
+  }
+}
+
+async function exitIdleState() {
+  if (!idleState.isIdle) return;
+  idleState.isIdle = false;
+  const restoreId = idleState.prevProfileId;
+  idleState.prevProfileId = null;
+  if (!restoreId) return;
+
+  const data = loadProfilesFromDisk();
+  const profiles = (data && Array.isArray(data.profiles)) ? data.profiles : [];
+  const target = profiles.find(p => p.id === restoreId);
+  if (!target) return;
+
+  await connectProfile(target);
+  rebuildTrayMenu();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('rpc:activeChanged', { activeProfileId: target.id, source: 'idle:resume' });
+  }
+}
+
+function setupIdleDetection() {
+  // Only set up powerMonitor handlers once — they're cheap & idempotent
+  try {
+    powerMonitor.on('lock-screen', () => {
+      if (extSettings.idle.enabled && extSettings.idle.onLock) enterIdleState('lock').catch(() => {});
+    });
+    powerMonitor.on('unlock-screen', () => {
+      if (extSettings.idle.enabled && extSettings.idle.onLock) exitIdleState().catch(() => {});
+    });
+    powerMonitor.on('suspend', () => {
+      if (extSettings.idle.enabled && extSettings.idle.onLock) enterIdleState('suspend').catch(() => {});
+    });
+    powerMonitor.on('resume', () => {
+      if (extSettings.idle.enabled && extSettings.idle.onLock) exitIdleState().catch(() => {});
+    });
+  } catch (e) {
+    console.warn('powerMonitor unavailable:', e.message);
+  }
+
+  // Poll system idle state every 30s when system-idle detection is on
+  if (idleState.systemIdleTimer) clearInterval(idleState.systemIdleTimer);
+  idleState.systemIdleTimer = setInterval(() => {
+    if (!extSettings.idle.enabled || !extSettings.idle.onSystemIdle) return;
+    try {
+      const idleSec = powerMonitor.getSystemIdleTime();
+      const threshold = Math.max(1, Number(extSettings.idle.afterMinutes) || 10) * 60;
+      if (idleSec >= threshold && !idleState.isIdle) {
+        enterIdleState('system-idle').catch(() => {});
+      } else if (idleSec < 5 && idleState.isIdle) {
+        // Snap back the moment activity returns
+        exitIdleState().catch(() => {});
+      }
+    } catch (_) { /* getSystemIdleTime not available on some envs */ }
+  }, 30_000);
+}
+
 app.whenReady().then(() => {
   updateState.currentVersion = app.getVersion();
   reconcileInstallHistory();
@@ -1144,6 +1525,15 @@ app.whenReady().then(() => {
 
   setupTray();
   createWindow();
+
+  // v1.7.0 subsystems — load ext settings, register hotkeys, start scanners,
+  // hook into the OS lock/idle signals, and apply the always-on-top flag.
+  loadExtSettings();
+  reapplyHotkeys();
+  setupIdleDetection();
+  startGameScanner();
+  applyAlwaysOnTop();
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
     showMainWindow();
@@ -1181,4 +1571,8 @@ app.on('will-quit', () => {
     try { tray.destroy(); } catch (_) {}
     tray = null;
   }
+  // Release every globalShortcut so the OS doesn't keep them bound after quit.
+  try { globalShortcut.unregisterAll(); } catch (_) {}
+  // Stop the game-scanner interval if it's still ticking.
+  try { stopGameScanner(); } catch (_) {}
 });
