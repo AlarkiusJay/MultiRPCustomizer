@@ -6,6 +6,9 @@ Inspired by [CustomRP](https://www.customrp.xyz) — reimagined with **profile t
 
 ## Flagship Features
 
+### Custom About — Override the Discord App Description from the App
+Every profile can rewrite its own Discord Application **Description** field (the one usually edited at *Dev Portal → General Information*) **without ever leaving MultiRP**. Paste your bot token once — stored encrypted via your OS keychain (DPAPI on Windows, Keychain on macOS, libsecret on Linux) using Electron's `safeStorage`, never written to plaintext on disk. Edit the text, hit **Push to Discord now**, and MultiRP fires a `PATCH /applications/@me` to update the live description. Auto-pushes on profile activate too, with smart dedupe so it's a no-op when nothing changed and a 30-second rate-limit guard so rapid switches never get you 429'd. Discord typically takes 5–15 minutes to refresh the description on activity cards.
+
 ### Profile Themes — Discord-Nitro-Style Customization
 Every profile gets its **own custom theme** — accent color, hover color, surfaces, borders, text, and an optional gradient. The whole app re-skins the moment you activate that profile, like Nitro themes on steroids — except yours, fully editable, with live color pickers and a hex input for every slot. Built-in presets (Spiritual, Dragon, Ocean, Sakura) get you started; custom pickers let you go anywhere from there. **CustomRP has zero theming.**
 
@@ -58,6 +61,7 @@ Discord deliberately hides your own buttons from your own profile card — you c
 - **Timestamps**: none / elapsed (auto-start) / custom start / custom range
 - **Image keys** for Large + Small images (uploaded to Discord Dev Portal)
 - **Party size** indicator
+- **Custom About Field** — per-profile override of your Discord App Description, with encrypted bot-token storage and auto-push on activate
 - **Auto Presence** — rotation, shuffle, or scheduled profile switching with custom intervals (seconds → days)
 - **Profile Themes** — per-profile accent / surface / gradient with presets and full custom color pickers
 - **Idle Detection** — auto-snap to an Idle profile on lock / suspend / idle, snap-back on activity

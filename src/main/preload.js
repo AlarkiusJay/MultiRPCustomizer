@@ -74,6 +74,20 @@ contextBridge.exposeInMainWorld('multirp', {
     }
   },
 
+  // v1.8.0 — Custom About Field (Discord App Description override)
+  about: {
+    setToken: (profileId, token) => ipcRenderer.invoke('about:setToken', { profileId, token }),
+    clearToken: (profileId) => ipcRenderer.invoke('about:clearToken', { profileId }),
+    hasToken: (profileId) => ipcRenderer.invoke('about:hasToken', { profileId }),
+    isAvailable: () => ipcRenderer.invoke('about:isAvailable'),
+    push: (profile, force) => ipcRenderer.invoke('about:push', { profile, force: !!force }),
+    onPushed: (cb) => {
+      const listener = (_e, payload) => cb(payload);
+      ipcRenderer.on('about:pushed', listener);
+      return () => ipcRenderer.removeListener('about:pushed', listener);
+    }
+  },
+
   // v1.7.0 — Hotkeys + Idle + Game Detection + Always-On-Top
   extSettings: {
     get: () => ipcRenderer.invoke('extSettings:get'),

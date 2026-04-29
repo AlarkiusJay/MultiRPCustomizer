@@ -238,6 +238,41 @@
           </div>
         </details>
 
+        <!-- Custom About Field (v1.8.0) — overrides Discord App Description -->
+        <details class="about-editor" id="aboutEditor">
+          <summary class="about-editor-summary">
+            <span class="about-editor-icon" aria-hidden="true">📝</span>
+            <span class="about-editor-title">Custom About</span>
+            <span class="about-editor-hint">Override your Discord App Description without leaving MultiRP</span>
+            <span class="about-editor-chevron" aria-hidden="true">›</span>
+          </summary>
+          <div class="about-editor-body">
+            <div class="about-help">
+              This rewrites the <b>Description</b> field on your Discord Application (Dev Portal → General Information). Discord may take 5–15 minutes to refresh on activity cards. Requires this profile's Bot Token, stored encrypted via your OS keychain.
+            </div>
+
+            <label class="about-field-label" for="aboutText">About text <span class="about-counter" id="aboutCounter">0 / 400</span></label>
+            <textarea id="aboutText" class="about-textarea" maxlength="400" rows="4"
+              placeholder="e.g. The Hibrythian Saga — a sprawling lore-stitched dragon-magic universe by AJ | AlarkiusEJ."></textarea>
+
+            <div class="about-token-row">
+              <label class="about-field-label" for="aboutBotToken">Bot Token <span class="about-token-status" id="aboutTokenStatus">🔒 not set</span></label>
+              <div class="about-token-input-row">
+                <input type="password" id="aboutBotToken" class="about-token-input" placeholder="Paste your bot token — stays encrypted on this device" autocomplete="off" spellcheck="false" />
+                <button type="button" id="aboutTokenReveal" class="btn ghost btn-sm" title="Show/hide token">👁</button>
+                <button type="button" id="aboutTokenSave" class="btn secondary btn-sm">Save Token</button>
+                <button type="button" id="aboutTokenClear" class="btn ghost btn-sm">Clear</button>
+              </div>
+              <div class="about-token-hint">Find your bot token at <a href="#" id="aboutPortalLink">discord.com/developers → your app → Bot</a>. Stored encrypted; only you can decrypt it on this machine.</div>
+            </div>
+
+            <div class="about-actions">
+              <button type="button" id="aboutPushNow" class="btn primary">Push to Discord now</button>
+              <span class="about-push-status" id="aboutPushStatus"></span>
+            </div>
+          </div>
+        </details>
+
         <div class="actions">
           <button id="btnActivate" class="btn primary">Activate</button>
           <button id="btnUpdate" class="btn secondary" disabled>Update Live</button>
@@ -590,7 +625,7 @@
     </main>
 
     <footer class="footer">
-      <span id="footerVersion">v1.7.1 · Built by Alarkius Elvya Jay</span>
+      <span id="footerVersion">v1.8.0 · Built by Alarkius Elvya Jay</span>
       <span class="footer-right">
         <a href="#" id="openHelp">Help &amp; Setup Guide</a>
       </span>

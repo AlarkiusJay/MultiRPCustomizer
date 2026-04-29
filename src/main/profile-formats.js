@@ -18,7 +18,11 @@ const FIELD_KEYS = [
   'smallImageKey', 'smallImageText',
   'partyCurrent', 'partyMax',
   'button1Label', 'button1Url',
-  'button2Label', 'button2Url'
+  'button2Label', 'button2Url',
+  // v1.8.0 — Custom About Field. Bot tokens are NEVER exported with profiles
+  // (they live encrypted in OS keychain only); aboutText travels with the
+  // preset so a re-import on the same machine keeps your description intact.
+  'aboutText'
 ];
 
 // ---------- XML helpers (no deps) ----------

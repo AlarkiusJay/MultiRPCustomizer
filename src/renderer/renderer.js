@@ -15,7 +15,9 @@ const FIELD_KEYS = [
   'smallImageKey', 'smallImageText',
   'partyCurrent', 'partyMax',
   'button1Label', 'button1Url',
-  'button2Label', 'button2Url'
+  'button2Label', 'button2Url',
+  // v1.8.0 — Custom About Field (text travels with preset; bot token never does)
+  'aboutText'
 ];
 
 // =============================================================
@@ -65,7 +67,10 @@ function newProfile(idx) {
     button1Url: '',
     button2Label: '',
     button2Url: '',
-    theme: { ...DEFAULT_PROFILE_THEME }
+    theme: { ...DEFAULT_PROFILE_THEME },
+    // v1.8.0 — Custom About Field
+    aboutText: '',
+    lastPushedDescription: ''
   };
 }
 
@@ -91,6 +96,9 @@ async function loadStore() {
     state.profiles.forEach(p => {
       if (!p.theme) p.theme = { ...DEFAULT_PROFILE_THEME };
       else p.theme = { ...DEFAULT_PROFILE_THEME, ...p.theme };
+      // v1.8.0 — Custom About Field migration
+      if (typeof p.aboutText !== 'string') p.aboutText = '';
+      if (typeof p.lastPushedDescription !== 'string') p.lastPushedDescription = '';
     });
     state.activeTab = Math.min(data.activeTab || 0, state.profiles.length - 1);
   }
@@ -326,11 +334,16 @@ function renderForm() {
   document.getElementById('button2Label').value = p.button2Label || '';
   document.getElementById('button2Url').value = p.button2Url || '';
 
+  // v1.8.0 — Custom About Field
+  const aboutTextEl = document.getElementById('aboutText');
+  if (aboutTextEl) aboutTextEl.value = p.aboutText || '';
+
   updateAllCounters();
   updateTimestampVisibility();
   updateActionButtons();
   renderPreview();
   renderThemeEditor();
+  refreshAboutEditor();
 }
 
 function updateCounter(inputId, counterId, max) {
@@ -809,6 +822,9 @@ async function init() {
   // Profile Theme editor wiring (v1.7.0)
   setupThemeEditor();
   refreshAppTheme();
+
+  // v1.8.0 — Custom About Field editor wiring
+  setupAboutEditor();
 
   // v1.7.0 — Hotkeys / Idle / Game UI
   setupHotkeysUI();
@@ -2190,4 +2206,206 @@ function refreshExtUI() {
   refreshHotkeysUI();
   refreshIdleUI();
   refreshGameUI();
+}
+
+// =============================================================
+// v1.8.0 — Custom About Field editor
+// =============================================================
+
+const ABOUT_DESCRIPTION_MAX = 400;
+
+let aboutTokenStaging = ''; // unsaved typed token, never echoed back to UI on render
+
+function setupAboutEditor() {
+  const textarea = document.getElementById('aboutText');
+  const counter = document.getElementById('aboutCounter');
+  const tokenInput = document.getElementById('aboutBotToken');
+  const tokenSave = document.getElementById('aboutTokenSave');
+  const tokenClear = document.getElementById('aboutTokenClear');
+  const tokenReveal = document.getElementById('aboutTokenReveal');
+  const pushBtn = document.getElementById('aboutPushNow');
+  const portalLink = document.getElementById('aboutPortalLink');
+
+  if (!textarea) return; // editor not in DOM (defensive)
+
+  textarea.addEventListener('input', () => {
+    const p = currentProfile();
+    p.aboutText = textarea.value.slice(0, ABOUT_DESCRIPTION_MAX);
+    refreshAboutCounter();
+    saveStore();
+  });
+
+  if (tokenInput) {
+    tokenInput.addEventListener('input', () => {
+      aboutTokenStaging = tokenInput.value;
+    });
+  }
+
+  if (tokenReveal) {
+    tokenReveal.addEventListener('click', () => {
+      const isPwd = tokenInput.type === 'password';
+      tokenInput.type = isPwd ? 'text' : 'password';
+      tokenReveal.textContent = isPwd ? '🙈' : '👁';
+    });
+  }
+
+  if (tokenSave) {
+    tokenSave.addEventListener('click', async () => {
+      const p = currentProfile();
+      const token = (aboutTokenStaging || tokenInput.value || '').trim();
+      if (!token) {
+        setAboutPushStatus('Paste a bot token first.', 'warn');
+        return;
+      }
+      try {
+        const res = await window.multirp.about.setToken(p.id, token);
+        if (res && res.ok) {
+          // Wipe input + staging immediately — token now lives encrypted only.
+          aboutTokenStaging = '';
+          tokenInput.value = '';
+          tokenInput.type = 'password';
+          if (tokenReveal) tokenReveal.textContent = '👁';
+          setAboutPushStatus('Bot token saved (encrypted via OS keychain).', 'success');
+          await refreshAboutTokenStatus();
+        } else {
+          setAboutPushStatus(res && res.error ? res.error : 'Failed to save token.', 'error');
+        }
+      } catch (e) {
+        setAboutPushStatus('Failed to save token: ' + (e.message || e), 'error');
+      }
+    });
+  }
+
+  if (tokenClear) {
+    tokenClear.addEventListener('click', async () => {
+      const p = currentProfile();
+      try {
+        await window.multirp.about.clearToken(p.id);
+        aboutTokenStaging = '';
+        tokenInput.value = '';
+        setAboutPushStatus('Bot token cleared.', 'warn');
+        await refreshAboutTokenStatus();
+      } catch (e) {
+        setAboutPushStatus('Failed to clear token: ' + (e.message || e), 'error');
+      }
+    });
+  }
+
+  if (pushBtn) {
+    pushBtn.addEventListener('click', async () => {
+      const p = currentProfile();
+      if (!p.aboutText || !p.aboutText.trim()) {
+        setAboutPushStatus('About text is empty — Discord will set the description to blank. Add some text first if that\'s not what you want.', 'warn');
+        return;
+      }
+      pushBtn.disabled = true;
+      const prevLabel = pushBtn.textContent;
+      pushBtn.textContent = 'Pushing…';
+      setAboutPushStatus('Sending to Discord…', '');
+      try {
+        const res = await window.multirp.about.push(p, true);
+        if (res && res.ok) {
+          if (res.skipped) {
+            setAboutPushStatus('Skipped (' + res.skipped + ').', 'warn');
+          } else {
+            setAboutPushStatus('Pushed. Discord may take 5–15 min to refresh on activity cards.', 'success');
+            // Cache the just-pushed value locally so the dedupe holds across this session.
+            p.lastPushedDescription = p.aboutText.slice(0, ABOUT_DESCRIPTION_MAX);
+            saveStore();
+          }
+        } else {
+          const msg = res && res.error ? res.error : 'Unknown error.';
+          if (res && res.status === 401) {
+            setAboutPushStatus('Discord rejected the bot token (401). Double-check it in the Dev Portal.', 'error');
+          } else if (res && res.status === 429) {
+            setAboutPushStatus('Rate-limited by Discord. Try again in a minute.', 'error');
+          } else {
+            setAboutPushStatus(msg, 'error');
+          }
+        }
+      } catch (e) {
+        setAboutPushStatus('Push failed: ' + (e.message || e), 'error');
+      } finally {
+        pushBtn.disabled = false;
+        pushBtn.textContent = prevLabel;
+      }
+    });
+  }
+
+  if (portalLink) {
+    portalLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (window.multirp && window.multirp.openExternal) {
+        window.multirp.openExternal('https://discord.com/developers/applications');
+      }
+    });
+  }
+
+  // Live notifications when main process auto-pushes on activate
+  if (window.multirp && window.multirp.about && window.multirp.about.onPushed) {
+    window.multirp.about.onPushed(({ profileId, result }) => {
+      // Only update the status line if the user is currently viewing that profile
+      const p = currentProfile();
+      if (!p || p.id !== profileId) return;
+      if (result && result.ok && !result.skipped) {
+        setAboutPushStatus('Auto-pushed on activate. Discord may take 5–15 min to refresh.', 'success');
+      } else if (result && result.ok && result.skipped) {
+        // Quietly ignore deduped/rate-limited auto-pushes
+      } else if (result && result.error) {
+        setAboutPushStatus('Auto-push on activate failed: ' + result.error, 'error');
+      }
+    });
+  }
+}
+
+function refreshAboutEditor() {
+  refreshAboutCounter();
+  refreshAboutTokenStatus();
+  // Clear status line when switching profiles so stale messages don't linger
+  setAboutPushStatus('', '');
+}
+
+function refreshAboutCounter() {
+  const textarea = document.getElementById('aboutText');
+  const counter = document.getElementById('aboutCounter');
+  if (!textarea || !counter) return;
+  const len = textarea.value.length;
+  counter.textContent = len + ' / ' + ABOUT_DESCRIPTION_MAX;
+  counter.classList.remove('warn', 'over');
+  if (len >= ABOUT_DESCRIPTION_MAX) counter.classList.add('over');
+  else if (len >= ABOUT_DESCRIPTION_MAX * 0.85) counter.classList.add('warn');
+}
+
+async function refreshAboutTokenStatus() {
+  const status = document.getElementById('aboutTokenStatus');
+  if (!status) return;
+  const p = currentProfile();
+  if (!p) return;
+  try {
+    const avail = await window.multirp.about.isAvailable();
+    if (!avail || !avail.available) {
+      status.textContent = '⚠ OS keychain unavailable';
+      status.classList.remove('set');
+      return;
+    }
+    const has = await window.multirp.about.hasToken(p.id);
+    if (has && has.has) {
+      status.textContent = '🔐 saved (encrypted)';
+      status.classList.add('set');
+    } else {
+      status.textContent = '🔒 not set';
+      status.classList.remove('set');
+    }
+  } catch (_) {
+    status.textContent = '🔒 not set';
+    status.classList.remove('set');
+  }
+}
+
+function setAboutPushStatus(message, kind) {
+  const el = document.getElementById('aboutPushStatus');
+  if (!el) return;
+  el.textContent = message || '';
+  el.classList.remove('success', 'error', 'warn');
+  if (kind) el.classList.add(kind);
 }

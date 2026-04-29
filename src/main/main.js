@@ -5,7 +5,8 @@
  * You may obtain a copy of the License at
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-const { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell, Notification, powerMonitor, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell, Notification, powerMonitor, globalShortcut, safeStorage } = require('electron');
+const https = require('https');
 const path = require('path');
 const fs = require('fs');
 const { exec } = require('child_process');
@@ -540,6 +541,184 @@ async function connectProfile(profile) {
   }
 }
 
+// =============================================================
+// v1.8.0 — Custom About Field (per-profile App Description override)
+//
+// Lets a user overwrite their Discord Application's Description field
+// (Dev Portal → General Information → Description) without leaving MultiRP.
+//
+// Storage:
+//   - The bot token is stored encrypted via Electron's safeStorage API,
+//     which sits on top of the OS keychain (DPAPI on Windows, Keychain on
+//     macOS, libsecret/kwallet on Linux). The encrypted blob lives in
+//     userData/about-tokens.json keyed by profileId. Plaintext tokens never
+//     touch disk in our own files.
+//   - On systems where safeStorage isn't available (rare — Linux without
+//     a working secret service), we refuse to persist tokens rather than
+//     fall back to plaintext, and the renderer surfaces a clear error.
+//
+// Push timing:
+//   - PATCH /applications/@me on explicit Save button click AND on profile
+//     activation. We dedupe against `lastPushedDescription` cached on the
+//     profile object so re-activating the same profile doesn't re-PATCH.
+//   - Soft rate-limit guard: minimum 30s between PATCHes per profile.
+// =============================================================
+
+const ABOUT_TOKENS_FILE = () => path.join(app.getPath('userData'), 'about-tokens.json');
+const ABOUT_PUSH_MIN_INTERVAL_MS = 30 * 1000;
+const ABOUT_DESCRIPTION_MAX = 400; // Discord caps the description field around here.
+const aboutLastPushAt = new Map(); // profileId -> ms timestamp of last successful PATCH
+
+function readAboutTokenStore() {
+  try {
+    const raw = fs.readFileSync(ABOUT_TOKENS_FILE(), 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeAboutTokenStore(store) {
+  try {
+    fs.writeFileSync(ABOUT_TOKENS_FILE(), JSON.stringify(store, null, 2), 'utf8');
+    return true;
+  } catch (e) {
+    console.error('Failed to persist about-tokens.json', e);
+    return false;
+  }
+}
+
+function aboutSetToken(profileId, token) {
+  if (!profileId || typeof token !== 'string') return { ok: false, error: 'Bad arguments' };
+  if (!safeStorage.isEncryptionAvailable()) {
+    return { ok: false, error: 'OS secure storage is unavailable; cannot save token safely.' };
+  }
+  const store = readAboutTokenStore();
+  if (!token.trim()) {
+    delete store[profileId];
+  } else {
+    const enc = safeStorage.encryptString(token.trim());
+    store[profileId] = { enc: enc.toString('base64'), savedAt: Date.now() };
+  }
+  if (!writeAboutTokenStore(store)) return { ok: false, error: 'Disk write failed.' };
+  return { ok: true };
+}
+
+function aboutGetToken(profileId) {
+  if (!profileId) return null;
+  if (!safeStorage.isEncryptionAvailable()) return null;
+  const store = readAboutTokenStore();
+  const entry = store[profileId];
+  if (!entry || !entry.enc) return null;
+  try {
+    return safeStorage.decryptString(Buffer.from(entry.enc, 'base64'));
+  } catch (_) {
+    return null;
+  }
+}
+
+function aboutHasToken(profileId) {
+  const store = readAboutTokenStore();
+  return !!(store[profileId] && store[profileId].enc);
+}
+
+function aboutClearToken(profileId) {
+  const store = readAboutTokenStore();
+  if (!store[profileId]) return { ok: true };
+  delete store[profileId];
+  return { ok: writeAboutTokenStore(store) };
+}
+
+// PATCH https://discord.com/api/v10/applications/@me with the bot token.
+// Returns { ok, status, body } so the renderer can show real Discord errors.
+function patchApplicationDescription(token, description) {
+  return new Promise((resolve) => {
+    const payload = JSON.stringify({ description: String(description || '') });
+    const req = https.request({
+      method: 'PATCH',
+      hostname: 'discord.com',
+      path: '/api/v10/applications/@me',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        'Authorization': 'Bot ' + token,
+        'User-Agent': 'MultiRP (https://github.com/AlarkiusJay/MultiRPCustomizer, ' + app.getVersion() + ')'
+      }
+    }, (res) => {
+      let body = '';
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => {
+        const ok = res.statusCode >= 200 && res.statusCode < 300;
+        resolve({ ok, status: res.statusCode, body });
+      });
+    });
+    req.on('error', (err) => resolve({ ok: false, status: 0, body: err.message || String(err) }));
+    req.write(payload);
+    req.end();
+  });
+}
+
+// Public push entry-point. Used both by the Save button (force=true) and by
+// the activation hook (force=false, dedupe against lastPushedDescription).
+async function pushAboutDescription(profile, { force = false } = {}) {
+  if (!profile || !profile.id) return { ok: false, error: 'No profile.' };
+  const desc = String((profile.aboutText || '')).slice(0, ABOUT_DESCRIPTION_MAX);
+
+  // Dedupe: if the same description was already pushed and not forced, skip.
+  if (!force && profile.lastPushedDescription === desc) {
+    return { ok: true, skipped: 'unchanged' };
+  }
+
+  // Soft rate-limit — don't hammer Discord on rapid activations.
+  const last = aboutLastPushAt.get(profile.id) || 0;
+  if (!force && (Date.now() - last) < ABOUT_PUSH_MIN_INTERVAL_MS) {
+    return { ok: true, skipped: 'rate-limited' };
+  }
+
+  const token = aboutGetToken(profile.id);
+  if (!token) return { ok: false, error: 'No bot token saved for this profile.' };
+
+  const result = await patchApplicationDescription(token, desc);
+  if (result.ok) {
+    aboutLastPushAt.set(profile.id, Date.now());
+    profile.lastPushedDescription = desc;
+    // Persist the dedupe marker so it survives restarts.
+    persistLastPushedDescription(profile.id, desc);
+    return { ok: true, status: result.status };
+  }
+  // Surface Discord's own error message when possible (rate-limit body etc.)
+  let parsed = null;
+  try { parsed = JSON.parse(result.body); } catch (_) {}
+  return {
+    ok: false,
+    status: result.status,
+    error: parsed && parsed.message ? parsed.message : ('HTTP ' + result.status + ': ' + result.body)
+  };
+}
+
+// Update lastPushedDescription on the persisted profile so the dedupe survives
+// app restarts. We re-read profiles.json from disk, mutate, write back.
+function persistLastPushedDescription(profileId, desc) {
+  try {
+    const data = loadProfilesFromDisk();
+    if (!data || !Array.isArray(data.profiles)) return;
+    const p = data.profiles.find(x => x.id === profileId);
+    if (!p) return;
+    p.lastPushedDescription = desc;
+    saveProfilesToDisk(data);
+  } catch (e) {
+    console.error('Failed to persist lastPushedDescription', e);
+  }
+}
+
+// IPC — renderer side bridge
+ipcMain.handle('about:setToken', async (_e, { profileId, token }) => aboutSetToken(profileId, token));
+ipcMain.handle('about:clearToken', async (_e, { profileId }) => aboutClearToken(profileId));
+ipcMain.handle('about:hasToken', async (_e, { profileId }) => ({ has: aboutHasToken(profileId) }));
+ipcMain.handle('about:isAvailable', async () => ({ available: !!safeStorage.isEncryptionAvailable() }));
+ipcMain.handle('about:push', async (_e, { profile, force }) => pushAboutDescription(profile, { force: !!force }));
+
 ipcMain.handle('rpc:connect', async (_evt, profile) => {
   // If auto-presence is running and the user wants manual to pause it, flip the
   // pause flag before activating. The renderer will see the new status and
@@ -551,6 +730,18 @@ ipcMain.handle('rpc:connect', async (_evt, profile) => {
   }
   const r = await connectProfile(profile);
   rebuildTrayMenu();
+  // v1.8.0 — best-effort push of the Custom About description on activation.
+  // Fires only if a token is configured for this profile; deduped against
+  // lastPushedDescription so it's a no-op when nothing changed. We never block
+  // the activation itself if the PATCH fails or rate-limits.
+  if (r && r.ok) {
+    try {
+      const result = await pushAboutDescription(profile, { force: false });
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('about:pushed', { profileId: profile.id, result });
+      }
+    } catch (_) {}
+  }
   return r;
 });
 
