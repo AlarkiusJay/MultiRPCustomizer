@@ -831,6 +831,9 @@ async function init() {
   // v1.9.5 — Tab transition motion
   setupMotion();
 
+  // v1.9.7 — Boot benchmark indicator + soft fade-out listener
+  setupBoot();
+
   // v1.7.0 — Hotkeys / Idle / Game UI
   setupHotkeysUI();
   setupIdleUI();
@@ -2473,4 +2476,46 @@ function setupMotion() {
       applyMotionPref();
     });
   }
+}
+
+// =============================================================
+// v1.9.7 — Boot benchmark indicator + soft fade-out on quit
+// =============================================================
+//
+// On startup we ask the main process for its boot phase summary and show
+// a tiny "Booted in 0.94s" line under the version footer. We also listen
+// for the `app:fade-out` IPC event the main process emits before quitting
+// and apply a 180ms scale+fade to <body> for a clean visual exit.
+
+async function setupBoot() {
+  // Fade-out listener — main fires this just before app.quit()
+  if (window.multirp && window.multirp.boot && window.multirp.boot.onFadeOut) {
+    window.multirp.boot.onFadeOut(() => {
+      try { document.body.classList.add('app-fading-out'); } catch (_) {}
+    });
+  }
+
+  // Boot benchmark — fetched once, then displayed. Wait a tiny bit so the
+  // first-paint mark has time to land in main's bootMarks map.
+  setTimeout(async () => {
+    try {
+      if (!window.multirp || !window.multirp.boot || !window.multirp.boot.summary) return;
+      const summary = await window.multirp.boot.summary();
+      if (!summary || !summary.totalMs) return;
+      const seconds = (summary.totalMs / 1000);
+      const label = seconds < 10
+        ? `Booted in ${seconds.toFixed(2)}s`
+        : `Booted in ${seconds.toFixed(1)}s`;
+      const el = document.getElementById('footerBoot');
+      if (!el) return;
+      el.textContent = `· ${label}`;
+      el.title = JSON.stringify(summary.phases);
+      el.hidden = false;
+      // Trigger CSS opacity transition on the next frame
+      requestAnimationFrame(() => el.classList.add('shown'));
+      console.log('[MultiRP] boot summary:', summary);
+    } catch (e) {
+      console.warn('boot summary fetch failed:', e);
+    }
+  }, 150);
 }

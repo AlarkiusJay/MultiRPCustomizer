@@ -23,6 +23,57 @@ let activeActivity = null;     // last sent activity payload (for re-send)
 // True quit vs hide-to-tray. Set by tray Quit menu / explicit quit IPC.
 app.isQuitting = false;
 
+// =============================================================
+// v1.9.7 — Boot benchmark + soft fade transitions
+// =============================================================
+// process.hrtime.bigint() is captured the moment main.js loads. We then mark
+// 'app-ready', 'window-shown', and 'first-paint' phases. The total is
+// pushed to the renderer once it asks for it (so it can show the
+// 'Booted in 0.94s' line under the version footer).
+const BOOT_T0 = process.hrtime.bigint();
+const bootMarks = {};
+function markBoot(label) {
+  bootMarks[label] = Number(process.hrtime.bigint() - BOOT_T0) / 1e6; // ms
+}
+function bootSummary() {
+  return {
+    totalMs: bootMarks['first-paint'] || bootMarks['window-shown'] || bootMarks['app-ready'] || 0,
+    phases: { ...bootMarks }
+  };
+}
+
+// Soft-fade the renderer to opacity 0 over ~180ms before quitting. Resolves
+// when the animation is done OR after a 250ms safety timeout so we never
+// wedge the quit path.
+function softFadeAndQuit() {
+  if (app.isQuitting) return;
+  app.isQuitting = true;
+  const win = mainWindow;
+  if (!win || win.isDestroyed() || !win.isVisible()) {
+    app.quit();
+    return;
+  }
+  const fadeMs = 180;
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    try { app.quit(); } catch (_) {}
+  };
+  // Renderer-side fade triggered via IPC; main also fades the BrowserWindow
+  // opacity in case the renderer is unresponsive.
+  try { win.webContents.send('app:fade-out', { ms: fadeMs }); } catch (_) {}
+  try {
+    const steps = 12;
+    for (let i = 1; i <= steps; i++) {
+      setTimeout(() => {
+        try { win && !win.isDestroyed() && win.setOpacity(1 - i / steps); } catch (_) {}
+      }, (fadeMs * i) / steps);
+    }
+  } catch (_) {}
+  setTimeout(finish, fadeMs + 70); // safety
+}
+
 // True when the process was launched with --hidden (auto-start to tray).
 const startHidden = process.argv.includes('--hidden');
 
@@ -227,10 +278,14 @@ function createWindow() {
     backgroundColor: '#1a1a1d',
     title: 'MultiRP',
     autoHideMenuBar: true,
+    show: false,                  // v1.9.7 — prevent white flash before ready-to-show
+    opacity: 0,                   // v1.9.7 — fade up to 1 once ready
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      backgroundThrottling: true, // v1.9.7 — throttle hidden renderer aggressively
+      spellcheck: false           // v1.9.7 — not needed in our forms; saves memory
     }
   });
 
@@ -281,14 +336,32 @@ function createWindow() {
   // Default Electron behavior is to show on first paint, so suppress that.
   if (startHidden) {
     mainWindow.once('ready-to-show', () => {
+      markBoot('window-shown');
       // Intentionally do not call show() — we live in the tray.
       if (process.platform === 'darwin' && app.dock) {
         try { app.dock.hide(); } catch (_) {}
       }
     });
   } else {
-    mainWindow.once('ready-to-show', () => mainWindow.show());
+    mainWindow.once('ready-to-show', () => {
+      markBoot('window-shown');
+      mainWindow.show();
+      // v1.9.7 — opacity fade-in (180ms) — pairs with v1.9.5 motion language
+      const fadeMs = 180;
+      const steps = 12;
+      for (let i = 1; i <= steps; i++) {
+        setTimeout(() => {
+          try { mainWindow && !mainWindow.isDestroyed() && mainWindow.setOpacity(i / steps); } catch (_) {}
+        }, (fadeMs * i) / steps);
+      }
+    });
   }
+
+  mainWindow.webContents.once('did-finish-load', () => {
+    markBoot('first-paint');
+    const summary = bootSummary();
+    console.log('[MultiRP] boot →', JSON.stringify(summary));
+  });
 
   mainWindow.loadFile(indexPath).catch((err) => {
     console.error('[MultiRP] loadFile threw:', err);
@@ -378,8 +451,8 @@ function buildTrayMenu() {
     {
       label: 'Quit MultiRP',
       click: () => {
-        app.isQuitting = true;
-        app.quit();
+        // v1.9.7 — soft fade before exit if window is visible
+        softFadeAndQuit();
       }
     }
   );
@@ -718,6 +791,11 @@ ipcMain.handle('about:clearToken', async (_e, { profileId }) => aboutClearToken(
 ipcMain.handle('about:hasToken', async (_e, { profileId }) => ({ has: aboutHasToken(profileId) }));
 ipcMain.handle('about:isAvailable', async () => ({ available: !!safeStorage.isEncryptionAvailable() }));
 ipcMain.handle('about:push', async (_e, { profile, force }) => pushAboutDescription(profile, { force: !!force }));
+
+// v1.9.7 — boot benchmark IPC
+ipcMain.handle('boot:summary', async () => bootSummary());
+// Soft-fade quit triggered from renderer (e.g. about modal, hotkey)
+ipcMain.handle('app:soft-quit', async () => { softFadeAndQuit(); });
 
 ipcMain.handle('rpc:connect', async (_evt, profile) => {
   // If auto-presence is running and the user wants manual to pause it, flip the
@@ -1600,15 +1678,39 @@ async function scanGames() {
   }
 }
 
+// v1.9.7 — adaptive game scanner.
+// Default 5s tick. After 60s without any process state change, fall back
+// to 15s. After 3 min still quiet, fall back to 30s. Any state change
+// resets to fast 5s. This saves real CPU during long writing sessions when
+// no tracked game is running.
+let gameScanLastChange = Date.now();
+function currentGameScanInterval() {
+  const quietMs = Date.now() - gameScanLastChange;
+  if (quietMs > 3 * 60 * 1000) return 30000;
+  if (quietMs > 60 * 1000) return 15000;
+  return 5000;
+}
+async function scanGamesAdaptive() {
+  const before = JSON.stringify((extSettings.game && extSettings.game.mappings || []).map(m => !!m.running));
+  await scanGames().catch(() => {});
+  const after = JSON.stringify((extSettings.game && extSettings.game.mappings || []).map(m => !!m.running));
+  if (before !== after) gameScanLastChange = Date.now();
+}
 function startGameScanner() {
   if (gameScanTimer) return;
-  gameScanTimer = setInterval(() => { scanGames().catch(() => {}); }, 5000);
+  const tick = async () => {
+    if (!gameScanTimer) return;
+    await scanGamesAdaptive();
+    if (!gameScanTimer) return;
+    gameScanTimer = setTimeout(tick, currentGameScanInterval());
+  };
+  gameScanTimer = setTimeout(tick, 0);
   // Run once immediately
-  scanGames().catch(() => {});
+  scanGamesAdaptive();
 }
 
 function stopGameScanner() {
-  if (gameScanTimer) { clearInterval(gameScanTimer); gameScanTimer = null; }
+  if (gameScanTimer) { clearTimeout(gameScanTimer); gameScanTimer = null; }
 }
 
 // =============================================================
@@ -1682,52 +1784,59 @@ function setupIdleDetection() {
     console.warn('powerMonitor unavailable:', e.message);
   }
 
-  // Poll system idle state every 30s when system-idle detection is on
+  // v1.9.7 — Only poll when system-idle detection is enabled. The lock-screen
+  // / suspend / resume events above are always wired (they're free) but the
+  // 30s polling timer is the one with measurable cost, so we gate it.
   if (idleState.systemIdleTimer) clearInterval(idleState.systemIdleTimer);
-  idleState.systemIdleTimer = setInterval(() => {
-    if (!extSettings.idle.enabled || !extSettings.idle.onSystemIdle) return;
-    try {
-      const idleSec = powerMonitor.getSystemIdleTime();
-      const threshold = Math.max(1, Number(extSettings.idle.afterMinutes) || 10) * 60;
-      if (idleSec >= threshold && !idleState.isIdle) {
-        enterIdleState('system-idle').catch(() => {});
-      } else if (idleSec < 5 && idleState.isIdle) {
-        // Snap back the moment activity returns
-        exitIdleState().catch(() => {});
-      }
-    } catch (_) { /* getSystemIdleTime not available on some envs */ }
-  }, 30_000);
+  if (extSettings.idle.enabled && extSettings.idle.onSystemIdle) {
+    idleState.systemIdleTimer = setInterval(() => {
+      try {
+        const idleSec = powerMonitor.getSystemIdleTime();
+        const threshold = Math.max(1, Number(extSettings.idle.afterMinutes) || 10) * 60;
+        if (idleSec >= threshold && !idleState.isIdle) {
+          enterIdleState('system-idle').catch(() => {});
+        } else if (idleSec < 5 && idleState.isIdle) {
+          // Snap back the moment activity returns
+          exitIdleState().catch(() => {});
+        }
+      } catch (_) { /* getSystemIdleTime not available on some envs */ }
+    }, 30_000);
+  }
 }
 
 app.whenReady().then(() => {
+  markBoot('app-ready');
   updateState.currentVersion = app.getVersion();
   reconcileInstallHistory();
-  setupAutoUpdater();
 
-  // Reconcile login item with persisted setting so user's preference survives reinstalls.
+  // ---- HOT PATH ----
+  // The bare minimum we need before the window paints: settings, auto-config,
+  // tray, and the window itself. Everything else is deferred.
   applyLoginItemSettings(loadSettings());
-
-  // Boot the auto-presence engine. Wait one full delay before the first tick
-  // so we don't yank a freshly-launched profile out from under the user.
   loadAutoConfig();
-  if (autoConfig.enabled && !autoConfig.paused) {
-    startAutoEngine({ runImmediately: false });
-  }
-
   setupTray();
   createWindow();
-
-  // v1.7.0 subsystems — load ext settings, register hotkeys, start scanners,
-  // hook into the OS lock/idle signals, and apply the always-on-top flag.
-  loadExtSettings();
-  reapplyHotkeys();
-  setupIdleDetection();
-  startGameScanner();
-  applyAlwaysOnTop();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
     showMainWindow();
+  });
+
+  // ---- DEFERRED PATH ----
+  // Spin up subsystems after the first paint so they don't fight the renderer
+  // for CPU during startup. setImmediate() yields to the IO loop; the chained
+  // setTimeout cascades each subsystem onto its own tick to avoid one big
+  // synchronous spike.
+  setImmediate(() => {
+    setupAutoUpdater();
+    if (autoConfig.enabled && !autoConfig.paused) {
+      startAutoEngine({ runImmediately: false });
+    }
+    setTimeout(() => loadExtSettings(), 0);
+    setTimeout(() => reapplyHotkeys(), 30);
+    setTimeout(() => setupIdleDetection(), 60);
+    setTimeout(() => startGameScanner(), 100);
+    setTimeout(() => applyAlwaysOnTop(), 130);
   });
 
   // Silent check ~3s after launch. Skipped in dev (no published feed).

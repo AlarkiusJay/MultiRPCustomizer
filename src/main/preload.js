@@ -74,6 +74,17 @@ contextBridge.exposeInMainWorld('multirp', {
     }
   },
 
+  // v1.9.7 — Boot benchmark + soft-quit
+  boot: {
+    summary: () => ipcRenderer.invoke('boot:summary'),
+    softQuit: () => ipcRenderer.invoke('app:soft-quit'),
+    onFadeOut: (cb) => {
+      const listener = (_e, payload) => cb(payload);
+      ipcRenderer.on('app:fade-out', listener);
+      return () => ipcRenderer.removeListener('app:fade-out', listener);
+    }
+  },
+
   // v1.8.0 — Custom About Field (Discord App Description override)
   about: {
     setToken: (profileId, token) => ipcRenderer.invoke('about:setToken', { profileId, token }),

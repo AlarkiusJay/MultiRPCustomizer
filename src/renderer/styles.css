@@ -1893,3 +1893,31 @@ html[data-motion="off"] .content.view-anim,
 html[data-motion="off"] .form-card.view-anim {
   animation: none !important;
 }
+
+/* =========================================================================
+   v1.9.7 — Boot benchmark indicator + soft fade-out on quit
+   ========================================================================= */
+.footer-boot {
+  font-size: 11px;
+  color: var(--text-dim);
+  opacity: 0;
+  margin-left: 10px;
+  transition: opacity 600ms ease-out;
+  font-variant-numeric: tabular-nums;
+}
+.footer-boot.shown { opacity: 0.75; }
+
+/* Renderer-side fade-out triggered by main process before quit. */
+@keyframes mrpAppFadeOut {
+  0%   { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.985); }
+}
+body.app-fading-out {
+  animation: mrpAppFadeOut 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  pointer-events: none;
+  transform-origin: 50% 50%;
+}
+@media (prefers-reduced-motion: reduce) {
+  body.app-fading-out { animation: none !important; opacity: 0; }
+}
+html[data-motion="off"] body.app-fading-out { animation: none !important; opacity: 0; }
