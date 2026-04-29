@@ -1628,20 +1628,65 @@ function renderUpdatesView() {
 }
 
 function formatReleaseNotes(notes, version) {
-  // Strip HTML tags for safety, then preserve simple markdown bullets / line breaks.
-  const escaped = String(notes)
+  // v1.9.7.2 — GitHub now sends release notes as HTML (was Markdown).
+  // We detect HTML, sanitize via DOMParser, drop the auto-generated
+  // 'Full Changelog' link footer GitHub appends, then render the
+  // remaining body. If the input is plain text/markdown we fall back
+  // to the original line-by-line formatter.
+  const raw = String(notes || '').trim();
+  const looksLikeHtml = /<\w+[^>]*>/.test(raw);
+  const header = version ? `<b>v${version}</b><br><br>` : '';
+
+  if (looksLikeHtml) {
+    try {
+      const doc = new DOMParser().parseFromString(raw, 'text/html');
+      const body = doc.body;
+      // Remove GitHub's auto 'Full Changelog' link blocks
+      body.querySelectorAll('p, div').forEach((p) => {
+        const t = (p.textContent || '').trim();
+        if (/^\s*Full Changelog\s*[:—-]/i.test(t)) p.remove();
+      });
+      // Allow only safe inline tags; strip <script>, <style>, attributes etc.
+      const allowed = new Set(['B','STRONG','I','EM','CODE','PRE','UL','OL','LI','P','BR','A','H1','H2','H3','H4','H5','H6','BLOCKQUOTE','HR','TT','SPAN']);
+      const sanitize = (node) => {
+        [...node.children].forEach((child) => {
+          if (!allowed.has(child.tagName)) {
+            // unwrap (keep text content)
+            const text = document.createTextNode(child.textContent || '');
+            child.replaceWith(text);
+            return;
+          }
+          // Strip every attribute except href on <a>
+          [...child.attributes].forEach((attr) => {
+            if (child.tagName === 'A' && attr.name === 'href') return;
+            child.removeAttribute(attr.name);
+          });
+          if (child.tagName === 'A') {
+            child.setAttribute('target', '_blank');
+            child.setAttribute('rel', 'noopener noreferrer');
+          }
+          sanitize(child);
+        });
+      };
+      sanitize(body);
+      return header + body.innerHTML.trim();
+    } catch (_) { /* fall through to plain-text formatter */ }
+  }
+
+  // Plain text / Markdown path (legacy)
+  const escaped = raw
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
-  // Naive: turn lines starting with - or * into bullets, **bold** into <b>
   const lines = escaped.split(/\r?\n/).map((line) => {
+    // Strip the 'Full Changelog' footer line if it slipped through as text
+    if (/^\s*Full Changelog\s*[:—-]/i.test(line)) return null;
     let l = line.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
     l = l.replace(/`([^`]+)`/g, '<code>$1</code>');
     if (/^\s*[-*]\s+/.test(l)) l = '• ' + l.replace(/^\s*[-*]\s+/, '');
     return l;
-  });
-  const header = version ? `<b>v${version}</b>\n\n` : '';
-  return header + lines.join('\n');
+  }).filter((l) => l !== null);
+  return (version ? `<b>v${version}</b>\n\n` : '') + lines.join('\n');
 }
 
 function refreshUpdateDot() {

@@ -1,6 +1,6 @@
 {
   "name": "multirp",
-  "version": "1.9.71",
+  "version": "1.9.72",
   "description": "MultiRP — Multi-profile Discord Rich Presence manager. Up to 5 profiles, each with its own Client ID. Toggle one active at a time.",
   "main": "src/main/main.js",
   "author": {
@@ -60,7 +60,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "MultiRP"
+      "shortcutName": "MultiRP",
+      "artifactName": "MultiRP-Setup-${version}.${ext}"
     },
     "mac": {
       "target": [
