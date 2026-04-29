@@ -282,6 +282,8 @@ function switchTab(i) {
   renderTabs();
   refreshAppTheme();
   saveStore();
+  // v1.9.5 — replay scale+fade on the profile form card
+  playViewAnim(document.querySelector('#viewProfile .form-card'));
 }
 
 function addProfile() {
@@ -826,6 +828,9 @@ async function init() {
   // v1.8.0 — Custom About Field editor wiring
   setupAboutEditor();
 
+  // v1.9.5 — Tab transition motion
+  setupMotion();
+
   // v1.7.0 — Hotkeys / Idle / Game UI
   setupHotkeysUI();
   setupIdleUI();
@@ -1118,6 +1123,13 @@ function switchView(view) {
   if (view === 'auto') {
     refreshAutoView();
   }
+
+  // v1.9.5 — replay scale+fade on the visible <main class="content">
+  const target =
+    view === 'profile' ? document.getElementById('viewProfile') :
+    view === 'updates' ? document.getElementById('viewUpdates') :
+    view === 'auto'    ? document.getElementById('viewAuto')    : null;
+  playViewAnim(target);
 }
 
 function setUpdateMessage(level, text) {
@@ -2408,4 +2420,57 @@ function setAboutPushStatus(message, kind) {
   el.textContent = message || '';
   el.classList.remove('success', 'error', 'warn');
   if (kind) el.classList.add(kind);
+}
+
+// =============================================================
+// v1.9.5 — Tab transition motion
+// =============================================================
+//
+// Plays a 200ms scale (0.98 → 1) + fade pop whenever the user switches
+// between tabs/views. Honors:
+//   1. OS-level prefers-reduced-motion (handled in CSS).
+//   2. App-level user override via the toggle in the Auto tab.
+//      Persisted to localStorage('multirp.motion') as 'on' | 'off'.
+//      When 'off', we set <html data-motion="off"> and CSS short-circuits
+//      the animation rule.
+//
+// The class `.view-anim` is removed and re-added on the next animation
+// frame to force the keyframe to restart on every switch — without that
+// dance, switching back to a recently-shown view would not re-trigger.
+
+function isMotionEnabled() {
+  return localStorage.getItem('multirp.motion') !== 'off';
+}
+
+function applyMotionPref() {
+  if (isMotionEnabled()) {
+    document.documentElement.removeAttribute('data-motion');
+  } else {
+    document.documentElement.setAttribute('data-motion', 'off');
+  }
+}
+
+function playViewAnim(el) {
+  if (!el) return;
+  // CSS short-circuits when reduce-motion is on or data-motion="off",
+  // but skip the class dance entirely so we don't churn the DOM either.
+  if (!isMotionEnabled()) return;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  el.classList.remove('view-anim');
+  // Force reflow so removing + re-adding the class restarts the keyframe.
+  // eslint-disable-next-line no-unused-expressions
+  void el.offsetWidth;
+  el.classList.add('view-anim');
+}
+
+function setupMotion() {
+  applyMotionPref();
+  const toggle = document.getElementById('motionEnabledToggle');
+  if (toggle) {
+    toggle.checked = isMotionEnabled();
+    toggle.addEventListener('change', (e) => {
+      localStorage.setItem('multirp.motion', e.target.checked ? 'on' : 'off');
+      applyMotionPref();
+    });
+  }
 }
