@@ -1,6 +1,6 @@
 {
   "name": "multirp",
-  "version": "1.9.91",
+  "version": "1.9.92",
   "description": "MultiRP \u2014 Multi-profile Discord Rich Presence manager. Up to 5 profiles, each with its own Client ID. Toggle one active at a time.",
   "main": "src/main/main.js",
   "author": {

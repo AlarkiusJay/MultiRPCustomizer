@@ -644,7 +644,21 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
   background: var(--bg-3);
   object-fit: contain;
   display: block;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-drag: none;
 }
+
+/* v1.9.9.2 — Brand-logo easter egg pulse. A quick heart-shaped scale +
+   accent glow when the secret click sequence fires. Resolves cleanly back
+   to the resting state via the underlying transition. */
+@keyframes brand-egg-pulse {
+  0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(88, 101, 242, 0.6); }
+  35%  { transform: scale(1.18); box-shadow: 0 0 18px 6px rgba(88, 101, 242, 0.55); }
+  70%  { transform: scale(0.96); box-shadow: 0 0 8px 2px rgba(88, 101, 242, 0.25); }
+  100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(88, 101, 242, 0); }
+}
+.brand-logo.egg-pulse { animation: brand-egg-pulse 0.9s ease-out; }
 
 /* ---------- Tabs bar (with utility tab on the right) ---------- */
 .tabs-bar {

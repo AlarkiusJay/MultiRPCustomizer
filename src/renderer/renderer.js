@@ -545,6 +545,48 @@ function startElapsedTicker() {
 }
 startElapsedTicker();
 
+// v1.9.9.2 — Brand-logo easter egg. 7 clicks within a 3-second window pops
+// a friendly little surprise. Resets if you pause too long. Adds a quick
+// heart pulse on the logo when it fires so you know you found something.
+function setupBrandEasterEgg() {
+  const logo = document.getElementById('brandLogo');
+  if (!logo) return;
+  const NEEDED = 7;
+  const WINDOW_MS = 3000;
+  let count = 0;
+  let firstClickAt = 0;
+  const reveal = () => {
+    // XOR-decode + base64-decode. Key is 'MRP!' rotating.
+    const enc = 'JSYkUT5ofw40PSVVOHwyRGI2AVZ5JWl2KgozcHIhORwCGRcMCDgkZH0DBXQBYH1i';
+    const key = [0x4D, 0x52, 0x50, 0x21];
+    const bin = atob(enc);
+    let url = '';
+    for (let i = 0; i < bin.length; i++) url += String.fromCharCode(bin.charCodeAt(i) ^ key[i % key.length]);
+    // Quick heart pulse on the logo so the user gets visual feedback.
+    logo.classList.remove('egg-pulse');
+    void logo.offsetWidth; // restart the animation
+    logo.classList.add('egg-pulse');
+    setTimeout(() => logo.classList.remove('egg-pulse'), 900);
+    if (window.multirp && window.multirp.openExternal) {
+      window.multirp.openExternal(url);
+    }
+  };
+  logo.addEventListener('click', () => {
+    const now = Date.now();
+    if (count === 0 || now - firstClickAt > WINDOW_MS) {
+      count = 1;
+      firstClickAt = now;
+      return;
+    }
+    count++;
+    if (count >= NEEDED) {
+      count = 0;
+      firstClickAt = 0;
+      reveal();
+    }
+  });
+}
+
 // v1.9.9.1 — Render Details/State as a clickable link when a URL is present.
 // Falls back to plain text when no URL or when the URL is invalid.
 function renderTextWithLink(el, text, url) {
@@ -1106,6 +1148,15 @@ async function init() {
 
   // Brand logo (replaces M placeholder)
   document.getElementById('brandLogo').src = 'logo.png';
+
+  // v1.9.9.2 — Easter egg.
+  // 7 clicks on the brand logo within 3 seconds opens a friendly little
+  // surprise in your default browser. Iykyk. The destination URL is XOR'd
+  // with a short rotating key and base64-encoded so it doesn't show up as
+  // a plaintext youtu.be link in the bundled source — not security, just
+  // keeping the surprise intact for anyone reading the codebase. Casual
+  // grep won't spoil it; intentional inspection of course will.
+  setupBrandEasterEgg();
 
   // Updates wiring
   setupUpdatesView();
