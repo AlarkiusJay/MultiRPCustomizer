@@ -13,6 +13,7 @@ const { exec } = require('child_process');
 const RPC = require('discord-rpc');
 const { autoUpdater } = require('electron-updater');
 const profileFormats = require('./profile-formats');
+const secureExport = require('./secure-export');
 
 let mainWindow = null;
 let tray = null;               // system tray instance
@@ -791,6 +792,91 @@ ipcMain.handle('about:clearToken', async (_e, { profileId }) => aboutClearToken(
 ipcMain.handle('about:hasToken', async (_e, { profileId }) => ({ has: aboutHasToken(profileId) }));
 ipcMain.handle('about:isAvailable', async () => ({ available: !!safeStorage.isEncryptionAvailable() }));
 ipcMain.handle('about:push', async (_e, { profile, force }) => pushAboutDescription(profile, { force: !!force }));
+
+// =============================================================
+// v1.9.9 — Encrypted bot-token export / import
+// =============================================================
+//
+// The user supplies a passphrase. We encrypt the bot token (already in OS
+// keychain) with AES-256-GCM, derive the key via PBKDF2-SHA256 (200k iter),
+// and write a .multirp-secure.json file. Importing the same file with the
+// correct passphrase restores the token into the OS keychain on the new
+// machine — no need to regenerate a token in the Discord developer portal.
+//
+// The plaintext profile fields (clientId, details, etc.) are stored in the
+// envelope unencrypted so users can still inspect what they're importing.
+// Only the secret material lives behind the KDF.
+
+ipcMain.handle('secure:export', async (_e, { profile, passphrase }) => {
+  if (!profile || !profile.id) return { ok: false, error: 'No profile provided.' };
+  if (typeof passphrase !== 'string' || passphrase.length < 8) {
+    return { ok: false, error: 'Passphrase must be at least 8 characters.' };
+  }
+  const token = aboutGetToken(profile.id);
+  if (!token) {
+    return { ok: false, error: 'No bot token saved for this profile. Save one in Custom About first.' };
+  }
+  const safeName = (profile.name || 'profile').replace(/[^a-z0-9-_]/gi, '_');
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: 'Export Profile (Secure)',
+    defaultPath: `${safeName}.multirp-secure.json`,
+    filters: [
+      { name: 'MultiRP Secure Profile', extensions: ['multirp-secure.json', 'json'] },
+      { name: 'All Files', extensions: ['*'] }
+    ]
+  });
+  if (canceled || !filePath) return { ok: false, canceled: true };
+  try {
+    // Strip the runtime-only profile id so importing creates a fresh entry
+    // rather than colliding with whatever id exists on the target machine.
+    const sanitized = profileFormats.sanitizeProfile(profile);
+    const { id, ...clean } = sanitized;
+    const content = secureExport.serializeSecure(clean, token, passphrase);
+    fs.writeFileSync(filePath, content, 'utf-8');
+    return { ok: true, filePath };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('secure:import', async (_e, { passphrase }) => {
+  if (typeof passphrase !== 'string' || passphrase.length === 0) {
+    return { ok: false, error: 'Passphrase required.' };
+  }
+  if (!safeStorage.isEncryptionAvailable()) {
+    return { ok: false, error: 'OS secure storage is unavailable; cannot save imported token safely.' };
+  }
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: 'Import Profile (Secure)',
+    filters: [
+      { name: 'MultiRP Secure Profile', extensions: ['multirp-secure.json', 'json'] },
+      { name: 'All Files', extensions: ['*'] }
+    ],
+    properties: ['openFile']
+  });
+  if (canceled || !filePaths || filePaths.length === 0) return { ok: false, canceled: true };
+  try {
+    const filePath = filePaths[0];
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    if (!secureExport.looksSecure(raw)) {
+      return { ok: false, error: 'Not a MultiRP secure profile file. Use the regular Import for plain .multirp.json files.' };
+    }
+    const { profile, botToken } = secureExport.parseSecure(raw, passphrase);
+    return { ok: true, profile, botToken: botToken || null, filePath };
+  } catch (e) {
+    // Wrong passphrase / tamper / parse errors all surface here.
+    return { ok: false, error: e.message };
+  }
+});
+
+// Save an imported token into the keychain under a freshly-created profile id.
+// The renderer calls this AFTER the new profile has been added to the store
+// (so we have a stable id to key on). We don't expose the plaintext token
+// back to the renderer beyond this hop.
+ipcMain.handle('secure:adoptToken', async (_e, { profileId, token }) => {
+  if (!profileId || typeof token !== 'string') return { ok: false, error: 'Bad arguments' };
+  return aboutSetToken(profileId, token);
+});
 
 // v1.9.7 — boot benchmark IPC
 ipcMain.handle('boot:summary', async () => bootSummary());

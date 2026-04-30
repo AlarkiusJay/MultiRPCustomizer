@@ -1921,3 +1921,28 @@ body.app-fading-out {
   body.app-fading-out { animation: none !important; opacity: 0; }
 }
 html[data-motion="off"] body.app-fading-out { animation: none !important; opacity: 0; }
+
+/* v1.9.9 — Secure Export warning callout */
+.secure-warn {
+  background: rgba(255, 165, 0, 0.08);
+  border: 1px solid rgba(255, 165, 0, 0.35);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 10px 0 14px 0;
+  color: #ffcc80;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.secure-warn b { color: #ffd591; }
+
+/* Passphrase input: monospace + a touch tighter than about-textarea */
+#securePassphrase,
+#securePassphraseConfirm,
+#secureImportPassphrase {
+  font-family: ui-monospace, "JetBrains Mono", "Fira Code", monospace;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  resize: none;
+  height: 38px;
+  padding: 8px 10px;
+}

@@ -779,6 +779,153 @@ function resetProfile() {
   saveStore();
 }
 
+// =============================================================
+// v1.9.9 — Encrypted profile export (with bot token)
+// =============================================================
+//
+// Two flows: export (current profile + token → encrypted file) and import
+// (encrypted file + passphrase → new profile + token in keychain). Both
+// gate behind a passphrase modal so the renderer never sees plaintext
+// tokens — they live only in main process memory during encrypt/decrypt.
+
+function passStrengthLabel(pw) {
+  if (!pw) return '—';
+  if (pw.length < 8) return 'too short';
+  let score = 0;
+  if (pw.length >= 12) score++;
+  if (pw.length >= 16) score++;
+  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) score++;
+  if (/\d/.test(pw)) score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+  return ['weak', 'okay', 'good', 'strong', 'great', 'excellent'][score] || 'okay';
+}
+
+function openSecureExport() {
+  const p = currentProfile();
+  if (!p || !p.id) return;
+  const modal = document.getElementById('secureExportModal');
+  const errEl = document.getElementById('secureExportError');
+  const passEl = document.getElementById('securePassphrase');
+  const confirmEl = document.getElementById('securePassphraseConfirm');
+  const strengthEl = document.getElementById('securePassStrength');
+  passEl.value = '';
+  confirmEl.value = '';
+  errEl.style.display = 'none';
+  errEl.textContent = '';
+  strengthEl.textContent = '—';
+  modal.hidden = false;
+  setTimeout(() => passEl.focus(), 30);
+
+  const updateStrength = () => { strengthEl.textContent = passStrengthLabel(passEl.value); };
+  passEl.oninput = updateStrength;
+}
+
+function closeSecureExport() {
+  const modal = document.getElementById('secureExportModal');
+  modal.hidden = true;
+  document.getElementById('securePassphrase').value = '';
+  document.getElementById('securePassphraseConfirm').value = '';
+}
+
+async function confirmSecureExport() {
+  const passEl = document.getElementById('securePassphrase');
+  const confirmEl = document.getElementById('securePassphraseConfirm');
+  const errEl = document.getElementById('secureExportError');
+  const pw = passEl.value;
+  const cf = confirmEl.value;
+
+  errEl.style.display = 'none';
+  errEl.textContent = '';
+
+  if (!pw || pw.length < 8) {
+    errEl.textContent = 'Passphrase must be at least 8 characters.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (pw !== cf) {
+    errEl.textContent = "Passphrases don't match.";
+    errEl.style.display = 'block';
+    return;
+  }
+  const p = currentProfile();
+  const result = await window.multirp.secure.exportProfile(p, pw);
+  if (result.canceled) { closeSecureExport(); return; }
+  if (!result.ok) {
+    errEl.textContent = result.error || 'Encryption failed.';
+    errEl.style.display = 'block';
+    return;
+  }
+  closeSecureExport();
+  showError(`Encrypted profile saved to ${result.filePath}`);
+  setTimeout(() => showError(''), 5000);
+}
+
+function openSecureImport() {
+  const modal = document.getElementById('secureImportModal');
+  const passEl = document.getElementById('secureImportPassphrase');
+  const errEl = document.getElementById('secureImportError');
+  passEl.value = '';
+  errEl.style.display = 'none';
+  errEl.textContent = '';
+  modal.hidden = false;
+  setTimeout(() => passEl.focus(), 30);
+}
+
+function closeSecureImport() {
+  document.getElementById('secureImportModal').hidden = true;
+  document.getElementById('secureImportPassphrase').value = '';
+}
+
+async function confirmSecureImport() {
+  const passEl = document.getElementById('secureImportPassphrase');
+  const errEl = document.getElementById('secureImportError');
+  const pw = passEl.value;
+  errEl.style.display = 'none';
+  errEl.textContent = '';
+  if (!pw) {
+    errEl.textContent = 'Enter the passphrase that was used to create the file.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const result = await window.multirp.secure.importProfile(pw);
+  if (result.canceled) { closeSecureImport(); return; }
+  if (!result.ok) {
+    errEl.textContent = result.error || 'Decryption failed.';
+    errEl.style.display = 'block';
+    return;
+  }
+  // Create a new profile tab from the decrypted data.
+  if (state.profiles.length >= MAX_PROFILES) {
+    errEl.textContent = `Max profiles reached (${MAX_PROFILES}). Delete one first.`;
+    errEl.style.display = 'block';
+    return;
+  }
+  const incoming = result.profile;
+  const fresh = newProfile(state.profiles.length + 1);
+  for (const key of FIELD_KEYS) {
+    if (key in incoming) fresh[key] = incoming[key];
+  }
+  state.profiles.push(fresh);
+  state.activeTab = state.profiles.length - 1;
+
+  // Adopt the token into the keychain under the new profile's id.
+  if (result.botToken) {
+    const adopt = await window.multirp.secure.adoptToken(fresh.id, result.botToken);
+    if (!adopt || !adopt.ok) {
+      console.warn('Failed to adopt token:', adopt && adopt.error);
+    }
+  }
+
+  renderTabs();
+  renderForm();
+  await saveStore();
+  closeSecureImport();
+  showError(result.botToken
+    ? `Imported "${fresh.name}" with bot token restored to keychain.`
+    : `Imported "${fresh.name}" (no token in file).`);
+  setTimeout(() => showError(''), 5000);
+}
+
 // ---------- Init ----------
 async function init() {
   // Render an immediate fallback so the window is never blank, even if loadStore fails.
@@ -811,6 +958,23 @@ async function init() {
   document.getElementById('btnExport').onclick = exportProfile;
   document.getElementById('btnImport').onclick = importProfile;
   document.getElementById('btnReset').onclick = resetProfile;
+
+  // v1.9.9 — Secure export/import wiring
+  document.getElementById('btnSecureExport').onclick = openSecureExport;
+  document.getElementById('btnSecureImport').onclick = openSecureImport;
+  document.getElementById('secureExportClose').onclick = closeSecureExport;
+  document.getElementById('secureExportCancel').onclick = closeSecureExport;
+  document.getElementById('secureExportConfirm').onclick = confirmSecureExport;
+  document.getElementById('secureImportClose').onclick = closeSecureImport;
+  document.getElementById('secureImportCancel').onclick = closeSecureImport;
+  document.getElementById('secureImportConfirm').onclick = confirmSecureImport;
+  // Enter to submit in passphrase fields
+  document.getElementById('securePassphraseConfirm').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') confirmSecureExport();
+  });
+  document.getElementById('secureImportPassphrase').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') confirmSecureImport();
+  });
 
   // Brand logo (replaces M placeholder)
   document.getElementById('brandLogo').src = 'logo.png';

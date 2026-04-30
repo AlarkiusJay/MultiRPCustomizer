@@ -99,6 +99,13 @@ contextBridge.exposeInMainWorld('multirp', {
     }
   },
 
+  // v1.9.9 — Encrypted bot-token export / import
+  secure: {
+    exportProfile: (profile, passphrase) => ipcRenderer.invoke('secure:export', { profile, passphrase }),
+    importProfile: (passphrase) => ipcRenderer.invoke('secure:import', { passphrase }),
+    adoptToken: (profileId, token) => ipcRenderer.invoke('secure:adoptToken', { profileId, token })
+  },
+
   // v1.7.0 — Hotkeys + Idle + Game Detection + Always-On-Top
   extSettings: {
     get: () => ipcRenderer.invoke('extSettings:get'),

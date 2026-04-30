@@ -280,6 +280,8 @@
           <span class="spacer"></span>
           <button id="btnImport" class="btn ghost" title="Import a profile preset — supports .crp (CustomRP), .json, .csv, .md, .txt">Import</button>
           <button id="btnExport" class="btn ghost" title="Export this profile — pick .crp, .json, .csv, .md, or .txt in the save dialog">Export</button>
+          <button id="btnSecureExport" class="btn ghost" title="Encrypted export including the bot token — protected by a passphrase you choose">🔐 Secure Export</button>
+          <button id="btnSecureImport" class="btn ghost" title="Import an encrypted .multirp-secure.json file — restores the bot token into your keychain">🔓 Secure Import</button>
           <button id="btnReset" class="btn ghost">Clear Profile</button>
         </div>
 
@@ -635,7 +637,7 @@
     </main>
 
     <footer class="footer">
-      <span id="footerVersion">v1.9.8.5 · Built by Alarkius Elvya Jay</span>
+      <span id="footerVersion">v1.9.9 · Built by Alarkius Elvya Jay</span>
       <span class="footer-boot" id="footerBoot" hidden></span>
       <span class="footer-right">
         <a href="#" id="openHelp">Help &amp; Setup Guide</a>
@@ -663,6 +665,51 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-primary" id="helpModalOk">Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v1.9.9 — Secure Export passphrase modal -->
+  <div class="modal-overlay" id="secureExportModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="secureExportTitle">
+      <div class="modal-header">
+        <h3 id="secureExportTitle">🔐 Secure Export</h3>
+        <button class="modal-close" id="secureExportClose" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p>This will create an encrypted profile file that includes your <b>bot token</b>. You can carry it to another machine and import it without regenerating the token in the Discord developer portal.</p>
+        <div class="secure-warn" role="note">
+          ⚠️ <b>Anyone with this file AND your passphrase can use your bot.</b> Keep both safe. We can't recover the file if you forget the passphrase — the encryption is yours, not ours.
+        </div>
+        <label class="about-field-label" for="securePassphrase">Passphrase <span class="about-counter" id="securePassStrength">—</span></label>
+        <input type="password" id="securePassphrase" class="about-textarea" autocomplete="new-password" placeholder="Choose a strong passphrase (min. 8 chars)" />
+        <label class="about-field-label" for="securePassphraseConfirm">Confirm passphrase</label>
+        <input type="password" id="securePassphraseConfirm" class="about-textarea" autocomplete="new-password" placeholder="Type it again to be safe" />
+        <p class="help-note" id="secureExportError" style="color:#ff8b8b; display:none;"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="secureExportCancel">Cancel</button>
+        <button class="btn btn-primary" id="secureExportConfirm">Encrypt & Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v1.9.9 — Secure Import passphrase modal -->
+  <div class="modal-overlay" id="secureImportModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="secureImportTitle">
+      <div class="modal-header">
+        <h3 id="secureImportTitle">🔓 Secure Import</h3>
+        <button class="modal-close" id="secureImportClose" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p>Pick an encrypted profile (<code>.multirp-secure.json</code>) and enter the passphrase that was used to create it.</p>
+        <label class="about-field-label" for="secureImportPassphrase">Passphrase</label>
+        <input type="password" id="secureImportPassphrase" class="about-textarea" autocomplete="current-password" placeholder="Enter the passphrase" />
+        <p class="help-note" id="secureImportError" style="color:#ff8b8b; display:none;"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="secureImportCancel">Cancel</button>
+        <button class="btn btn-primary" id="secureImportConfirm">Decrypt & Import</button>
       </div>
     </div>
   </div>

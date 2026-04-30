@@ -30,6 +30,9 @@ A flagship that **CustomRP cannot do** because CustomRP only has one profile. Wi
 
 Manual activation politely pauses the engine with a one-click **Resume Auto** affordance. Optional system notifications when switches happen. Drag-to-reorder rotation. Live next-switch countdown. Set it once and forget it.
 
+### Encrypted Profile Export — Carry Your Bot Tokens (v1.9.9)
+Move a profile to another machine **without regenerating the bot token in the Discord developer portal**. Click **Secure Export**, choose a passphrase, and MultiRP writes a `.multirp-secure.json` file: profile fields are visible plaintext (so you can audit what's in there), the bot token is encrypted with **AES-256-GCM** using a key derived via **PBKDF2-HMAC-SHA256 (200k iterations)** from your passphrase. On the new machine, **Secure Import** prompts for the passphrase and restores the token straight into the OS keychain — the renderer never sees it in plaintext. Wrong passphrase or any tampering with the file fails closed with a clear error.
+
 ### CustomRP File Compatibility
 MultiRP reads and writes **CustomRP's native `.crp` format** — drag your existing presets straight in, no conversion step. Export back to `.crp` and hand them to friends still on CustomRP. Also supports **`.json`** (MultiRP native), **`.csv`**, **`.md`**, and **`.txt`** — with smart format detection by both file extension *and* content sniffing, so renamed files still work.
 
