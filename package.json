@@ -1,7 +1,7 @@
 {
   "name": "multirp",
-  "version": "1.9.73",
-  "description": "MultiRP — Multi-profile Discord Rich Presence manager. Up to 5 profiles, each with its own Client ID. Toggle one active at a time.",
+  "version": "1.9.74",
+  "description": "MultiRP \u2014 Multi-profile Discord Rich Presence manager. Up to 5 profiles, each with its own Client ID. Toggle one active at a time.",
   "main": "src/main/main.js",
   "author": {
     "name": "Alarkius Elvya Jay",
@@ -28,7 +28,7 @@
   "build": {
     "appId": "com.alarkius.multirp",
     "productName": "MultiRP",
-    "copyright": "Copyright © 2026 Alarkius Elvya Jay",
+    "copyright": "Copyright \u00a9 2026 Alarkius Elvya Jay",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -49,7 +49,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.ico"
@@ -67,7 +69,10 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "icon": "build/icon.icns",
@@ -75,8 +80,18 @@
     },
     "linux": {
       "target": [
-        { "target": "AppImage", "arch": ["x64"] },
-        { "target": "deb", "arch": ["x64"] }
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "build/icon.png",
       "category": "Utility",
