@@ -517,33 +517,77 @@ function applyLoginItemSettings(settings) {
   }
 }
 
-// Build the activity payload from a profile object
+// =============================================================
+// v1.9.9.1 — Hyperlink Fields
+//
+// We build the activity payload directly in Discord's wire-spec shape
+// (nested `timestamps`, nested `assets`, snake_case field names) and
+// bypass discord-rpc 4.0.1's `client.setActivity()` because that wrapper
+// silently drops unknown fields like `details_url`, `state_url`,
+// `assets.large_url`, and `assets.small_url`. We send the raw
+// `SET_ACTIVITY` RPC command via `client.request(...)` instead, which
+// passes our payload straight through to Discord. RPCCommands in
+// discord-rpc is just a string keymirror, so the literal 'SET_ACTIVITY'
+// is the canonical command name.
+//
+// Reference: https://docs.discord.com/developers/discord-social-sdk/development-guides/setting-rich-presence
+//   "When present, these URLs will make the corresponding image/text
+//    into clickable links."
+// =============================================================
+
+// Validate a hyperlink URL. Accepts https://, soft-accepts http://.
+// Returns the trimmed URL on success or null if rejected.
+function sanitizeLinkUrl(raw) {
+  if (!raw) return null;
+  const url = String(raw).trim();
+  if (!url) return null;
+  if (/^https:\/\//i.test(url)) return url;
+  if (/^http:\/\//i.test(url)) return url; // soft-allowed; renderer warns the user
+  return null; // reject javascript:, data:, file:, etc.
+}
+
+// Build the activity payload from a profile object, in Discord wire-spec shape.
 function buildActivity(profile) {
   const activity = {};
   if (profile.details) activity.details = profile.details.slice(0, 128);
   if (profile.state) activity.state = profile.state.slice(0, 128);
 
-  // Timestamps
+  // Timestamps (nested object in wire spec)
+  const timestamps = {};
   if (profile.timestampMode === 'elapsed') {
-    activity.startTimestamp = Math.floor(Date.now() / 1000);
+    timestamps.start = Math.floor(Date.now() / 1000);
   } else if (profile.timestampMode === 'custom_start' && profile.startTimestamp) {
-    activity.startTimestamp = parseInt(profile.startTimestamp, 10);
+    timestamps.start = parseInt(profile.startTimestamp, 10);
   }
   if (profile.timestampMode === 'custom_range' && profile.endTimestamp) {
-    activity.endTimestamp = parseInt(profile.endTimestamp, 10);
-    if (profile.startTimestamp) activity.startTimestamp = parseInt(profile.startTimestamp, 10);
+    timestamps.end = parseInt(profile.endTimestamp, 10);
+    if (profile.startTimestamp) timestamps.start = parseInt(profile.startTimestamp, 10);
   }
+  if (timestamps.start || timestamps.end) activity.timestamps = timestamps;
 
-  // Images
-  if (profile.largeImageKey) activity.largeImageKey = profile.largeImageKey.trim();
-  if (profile.largeImageText) activity.largeImageText = profile.largeImageText.slice(0, 128);
-  if (profile.smallImageKey) activity.smallImageKey = profile.smallImageKey.trim();
-  if (profile.smallImageText) activity.smallImageText = profile.smallImageText.slice(0, 128);
+  // Assets (nested object in wire spec) — includes hyperlink URLs (v1.9.9.1)
+  const assets = {};
+  if (profile.largeImageKey) assets.large_image = profile.largeImageKey.trim();
+  if (profile.largeImageText) assets.large_text = profile.largeImageText.slice(0, 128);
+  if (profile.smallImageKey) assets.small_image = profile.smallImageKey.trim();
+  if (profile.smallImageText) assets.small_text = profile.smallImageText.slice(0, 128);
+  const largeUrl = sanitizeLinkUrl(profile.largeImageUrl);
+  if (largeUrl) assets.large_url = largeUrl;
+  const smallUrl = sanitizeLinkUrl(profile.smallImageUrl);
+  if (smallUrl) assets.small_url = smallUrl;
+  if (Object.keys(assets).length > 0) activity.assets = assets;
 
-  // Party size
+  // Hyperlinks on the text fields themselves (v1.9.9.1)
+  const detailsUrl = sanitizeLinkUrl(profile.detailsUrl);
+  if (detailsUrl && activity.details) activity.details_url = detailsUrl;
+  const stateUrl = sanitizeLinkUrl(profile.stateUrl);
+  if (stateUrl && activity.state) activity.state_url = stateUrl;
+
+  // Party size (nested object in wire spec)
   if (profile.partyCurrent && profile.partyMax) {
-    activity.partySize = parseInt(profile.partyCurrent, 10);
-    activity.partyMax = parseInt(profile.partyMax, 10);
+    activity.party = {
+      size: [parseInt(profile.partyCurrent, 10), parseInt(profile.partyMax, 10)]
+    };
   }
 
   // Buttons (Discord allows max 2). These appear as clickable links for OTHER users.
@@ -563,6 +607,16 @@ function buildActivity(profile) {
   activity.instance = false;
 
   return activity;
+}
+
+// Send activity via raw RPC command, bypassing discord-rpc's setActivity wrapper
+// (which strips unknown fields). Pass our wire-spec activity object straight
+// through to the Discord client.
+async function sendActivity(client, activity) {
+  return client.request('SET_ACTIVITY', {
+    pid: process.pid,
+    activity
+  });
 }
 
 async function disconnectClient() {
@@ -595,7 +649,7 @@ async function connectProfile(profile) {
     const activity = buildActivity(profile);
 
     await client.login({ clientId: String(profile.clientId).trim() });
-    await client.setActivity(activity);
+    await sendActivity(client, activity);
 
     activeClient = client;
     activeProfileId = profile.id;
@@ -926,7 +980,7 @@ ipcMain.handle('rpc:update', async (_evt, profile) => {
   }
   try {
     const activity = buildActivity(profile);
-    await activeClient.setActivity(activity);
+    await sendActivity(activeClient, activity);
     activeActivity = activity;
     return { ok: true };
   } catch (err) {

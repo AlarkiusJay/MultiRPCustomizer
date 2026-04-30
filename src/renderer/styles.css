@@ -232,6 +232,58 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 .counter.warn { color: var(--warn); }
 .counter.full { color: var(--danger); }
 
+/* v1.9.9.1 — Hyperlink Fields. Subtle 🔗 toggle next to a field label.
+   Click expands an inline URL input below the field. When a URL is set,
+   the toggle is highlighted to indicate the field is hyperlinked. */
+.link-toggle {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 1;
+  border-radius: 4px;
+  margin-left: 6px;
+  opacity: 0.55;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.link-toggle:hover { opacity: 1; background: var(--bg-elev-2, rgba(255,255,255,0.06)); color: var(--text); }
+.link-toggle.active {
+  opacity: 1;
+  color: var(--accent, #5865f2);
+  border-color: var(--accent, #5865f2);
+  background: rgba(88, 101, 242, 0.12);
+}
+.link-url-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  margin-top: 4px;
+  border-color: var(--accent, #5865f2) !important;
+}
+.link-url-input.invalid { border-color: var(--danger, #ed4245) !important; }
+.link-url-input.warn { border-color: var(--warn, #faa61a) !important; }
+
+/* v1.9.9.1 — Preview hyperlink rendering. Matches Discord: details/state
+   text becomes a subtle underlined link, large/small images get a hover ring. */
+.preview-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--accent, #5865f2);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.preview-link:hover { text-decoration-thickness: 2px; }
+.preview-large.hyperlink, .preview-small.hyperlink {
+  outline: 1px solid transparent;
+  transition: outline-color 0.15s ease, transform 0.15s ease;
+}
+.preview-large.hyperlink:hover, .preview-small.hyperlink:hover {
+  outline-color: var(--accent, #5865f2);
+  transform: scale(1.02);
+}
+
 .section-header {
   margin: 8px 0 12px;
   padding-top: 12px;

@@ -267,3 +267,26 @@ body {
   border-radius: 4px;
 }
 .popout-discord-frame::-webkit-scrollbar-track { background: transparent; }
+
+/* v1.9.9.1 — Hyperlink Fields. Mirror the main window's preview link styles
+   so clickable details/state/images look consistent between the inline
+   preview card and the popout window. */
+.preview-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--accent, #5865f2);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.preview-link:hover { text-decoration-thickness: 2px; }
+.popout-large.hyperlink, .popout-small.hyperlink,
+#popLarge.hyperlink, #popSmall.hyperlink {
+  outline: 1px solid transparent;
+  transition: outline-color 0.15s ease, transform 0.15s ease;
+}
+.popout-large.hyperlink:hover, .popout-small.hyperlink:hover,
+#popLarge.hyperlink:hover, #popSmall.hyperlink:hover {
+  outline-color: var(--accent, #5865f2);
+  transform: scale(1.02);
+}

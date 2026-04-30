@@ -29,8 +29,10 @@
     if (!snap) return;
     $('popActivityVerb').textContent = snap.activityVerb || 'Playing';
     $('popAppName').textContent = snap.appName || 'App name';
-    $('popDetails').textContent = snap.details || '—';
-    $('popState').textContent = snap.state || '—';
+    // v1.9.9.1 — Hyperlink Fields. If a URL is set on details/state, render
+    // them as clickable links. Otherwise, fall back to plain text.
+    renderTextOrLink($('popDetails'), snap.details, snap.detailsUrl);
+    renderTextOrLink($('popState'), snap.state, snap.stateUrl);
     $('popElapsed').textContent = snap.elapsed || '';
 
     // Username header — uses the app name as a stand-in identity.
@@ -76,6 +78,11 @@
     large.title = snap.largeTooltip || '';
     small.title = snap.smallTooltip || '';
 
+    // v1.9.9.1 — Hyperlink Fields. Make the popout images clickable when
+    // the parent forwarded a valid URL.
+    applyImageLinkPopout(large, snap.largeImageUrl);
+    applyImageLinkPopout(small, snap.smallImageUrl);
+
     const btnsEl = $('popButtons');
     btnsEl.innerHTML = '';
     (snap.buttons || []).forEach((b) => {
@@ -90,6 +97,42 @@
       };
       btnsEl.appendChild(el);
     });
+  }
+
+  // v1.9.9.1 — popout-side helpers for hyperlink rendering.
+  function renderTextOrLink(el, text, url) {
+    if (!el) return;
+    el.innerHTML = '';
+    el.classList.remove('hyperlink');
+    const display = text || '—';
+    if (text && url && /^https?:\/\//i.test(url)) {
+      const a = document.createElement('a');
+      a.href = '#';
+      a.textContent = display;
+      a.title = url;
+      a.className = 'preview-link';
+      a.onclick = (e) => {
+        e.preventDefault();
+        if (window.multirp && window.multirp.openExternal) window.multirp.openExternal(url);
+      };
+      el.appendChild(a);
+      el.classList.add('hyperlink');
+    } else {
+      el.textContent = display;
+    }
+  }
+  function applyImageLinkPopout(el, url) {
+    if (!el) return;
+    el.onclick = null;
+    el.classList.remove('hyperlink');
+    el.style.cursor = '';
+    if (!url || !/^https?:\/\//i.test(url)) return;
+    el.classList.add('hyperlink');
+    el.style.cursor = 'pointer';
+    el.onclick = (e) => {
+      e.preventDefault();
+      if (window.multirp && window.multirp.openExternal) window.multirp.openExternal(url);
+    };
   }
 
   // Wire up the close button

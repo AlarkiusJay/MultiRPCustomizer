@@ -83,19 +83,34 @@
         </div>
 
         <div class="field">
-          <label>Details <span class="counter" id="detailsCounter">0/128</span></label>
+          <label>
+            Details
+            <span class="counter" id="detailsCounter">0/128</span>
+            <button type="button" class="link-toggle" id="detailsLinkToggle" data-target="detailsUrl" title="Add hyperlink (v1.9.9.1)" aria-label="Toggle Details hyperlink">🔗</button>
+          </label>
           <input type="text" id="details" maxlength="128" placeholder="First line shown on Discord" />
+          <input type="url" id="detailsUrl" class="link-url-input" placeholder="https:// (turns Details into a clickable link)" hidden />
         </div>
 
         <div class="field">
-          <label>State <span class="counter" id="stateCounter">0/128</span></label>
+          <label>
+            State
+            <span class="counter" id="stateCounter">0/128</span>
+            <button type="button" class="link-toggle" id="stateLinkToggle" data-target="stateUrl" title="Add hyperlink (v1.9.9.1)" aria-label="Toggle State hyperlink">🔗</button>
+          </label>
           <input type="text" id="state" maxlength="128" placeholder="Second line shown on Discord" />
+          <input type="url" id="stateUrl" class="link-url-input" placeholder="https:// (turns State into a clickable link)" hidden />
         </div>
 
         <div class="row">
           <div class="field">
-            <label>Large Image Key <span class="hint">(asset name in Dev Portal)</span></label>
+            <label>
+              Large Image Key
+              <span class="hint">(asset name in Dev Portal)</span>
+              <button type="button" class="link-toggle" id="largeImageLinkToggle" data-target="largeImageUrl" title="Add hyperlink (v1.9.9.1)" aria-label="Toggle Large Image hyperlink">🔗</button>
+            </label>
             <input type="text" id="largeImageKey" placeholder="e.g. main_logo" />
+            <input type="url" id="largeImageUrl" class="link-url-input" placeholder="https:// (makes large image clickable)" hidden />
           </div>
           <div class="field">
             <label>Large Image Tooltip <span class="counter" id="largeImageTextCounter">0/128</span></label>
@@ -105,8 +120,12 @@
 
         <div class="row">
           <div class="field">
-            <label>Small Image Key</label>
+            <label>
+              Small Image Key
+              <button type="button" class="link-toggle" id="smallImageLinkToggle" data-target="smallImageUrl" title="Add hyperlink (v1.9.9.1)" aria-label="Toggle Small Image hyperlink">🔗</button>
+            </label>
             <input type="text" id="smallImageKey" placeholder="e.g. status_icon" />
+            <input type="url" id="smallImageUrl" class="link-url-input" placeholder="https:// (makes small image clickable)" hidden />
           </div>
           <div class="field">
             <label>Small Image Tooltip <span class="counter" id="smallImageTextCounter">0/128</span></label>
@@ -637,7 +656,7 @@
     </main>
 
     <footer class="footer">
-      <span id="footerVersion">v1.9.9 · Built by Alarkius Elvya Jay</span>
+      <span id="footerVersion">v1.9.9.1 · Built by Alarkius Elvya Jay</span>
       <span class="footer-boot" id="footerBoot" hidden></span>
       <span class="footer-right">
         <a href="#" id="openHelp">Help &amp; Setup Guide</a>

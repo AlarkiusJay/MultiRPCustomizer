@@ -22,7 +22,14 @@ const FIELD_KEYS = [
   // v1.8.0 — Custom About Field. Bot tokens are NEVER exported with profiles
   // (they live encrypted in OS keychain only); aboutText travels with the
   // preset so a re-import on the same machine keeps your description intact.
-  'aboutText'
+  'aboutText',
+  // v1.9.9.1 — Hyperlink Fields. Optional https:// URLs that turn the
+  // associated text/image into clickable links in Discord. discord-rpc 4.0.1
+  // does NOT pass these through, so we bypass setActivity() and call
+  // client.request('SET_ACTIVITY', ...) directly. Drops gracefully on .crp
+  // export (CustomRP doesn't support URL fields).
+  'detailsUrl', 'stateUrl',
+  'largeImageUrl', 'smallImageUrl'
 ];
 
 // ---------- XML helpers (no deps) ----------

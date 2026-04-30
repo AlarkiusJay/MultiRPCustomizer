@@ -70,6 +70,11 @@ function newProfile(idx) {
     theme: { ...DEFAULT_PROFILE_THEME },
     // v1.8.0 — Custom About Field
     aboutText: '',
+    // v1.9.9.1 — Hyperlink Fields (clickable Details/State/Large/Small)
+    detailsUrl: '',
+    stateUrl: '',
+    largeImageUrl: '',
+    smallImageUrl: '',
     lastPushedDescription: ''
   };
 }
@@ -340,6 +345,25 @@ function renderForm() {
   const aboutTextEl = document.getElementById('aboutText');
   if (aboutTextEl) aboutTextEl.value = p.aboutText || '';
 
+  // v1.9.9.1 — Hyperlink Fields
+  const linkPairs = [
+    ['detailsUrl', 'detailsLinkToggle'],
+    ['stateUrl', 'stateLinkToggle'],
+    ['largeImageUrl', 'largeImageLinkToggle'],
+    ['smallImageUrl', 'smallImageLinkToggle']
+  ];
+  for (const [inputId, toggleId] of linkPairs) {
+    const input = document.getElementById(inputId);
+    const toggle = document.getElementById(toggleId);
+    if (!input || !toggle) continue;
+    const value = p[inputId] || '';
+    input.value = value;
+    // Auto-expand when a URL is already set; collapse when empty.
+    input.hidden = !value;
+    toggle.classList.toggle('active', !!value);
+    validateLinkInput(input);
+  }
+
   updateAllCounters();
   updateTimestampVisibility();
   updateActionButtons();
@@ -521,12 +545,38 @@ function startElapsedTicker() {
 }
 startElapsedTicker();
 
+// v1.9.9.1 — Render Details/State as a clickable link when a URL is present.
+// Falls back to plain text when no URL or when the URL is invalid.
+function renderTextWithLink(el, text, url) {
+  if (!el) return;
+  el.innerHTML = '';
+  el.classList.remove('hyperlink');
+  const display = text || '—';
+  const validUrl = url && /^https?:\/\//i.test(url) ? url : null;
+  if (validUrl && text) {
+    const a = document.createElement('a');
+    a.href = '#';
+    a.textContent = display;
+    a.title = validUrl;
+    a.className = 'preview-link';
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (window.multirp && window.multirp.openExternal) window.multirp.openExternal(validUrl);
+    });
+    el.appendChild(a);
+    el.classList.add('hyperlink');
+  } else {
+    el.textContent = display;
+  }
+}
+
 function renderPreview() {
   const p = currentProfile();
   document.getElementById('prevActivityLabel').textContent = activityVerb(p.activityType);
   document.getElementById('prevAppName').textContent = p.name || 'App name';
-  document.getElementById('prevDetails').textContent = p.details || '—';
-  document.getElementById('prevState').textContent = p.state || '—';
+  // v1.9.9.1 — hyperlink Details/State when a URL is set on the profile.
+  renderTextWithLink(document.getElementById('prevDetails'), p.details, p.detailsUrl);
+  renderTextWithLink(document.getElementById('prevState'), p.state, p.stateUrl);
 
   const elapsedEl = document.getElementById('prevElapsed');
   const elapsedStr = formatElapsedString(p);
@@ -577,7 +627,27 @@ function renderPreview() {
   big.title = p.largeImageTooltip || '';
   small.title = p.smallImageTooltip || '';
 
+  // v1.9.9.1 — Make preview images clickable when a hyperlink URL is set.
+  applyImageLink(big, p.largeImageUrl);
+  applyImageLink(small, p.smallImageUrl);
+
   pushPreviewSnapshot();
+}
+
+// v1.9.9.1 — Toggle clickable hyperlink behavior on a preview image element.
+function applyImageLink(el, url) {
+  if (!el) return;
+  el.onclick = null;
+  el.classList.remove('hyperlink');
+  el.style.cursor = '';
+  const validUrl = url && /^https?:\/\//i.test(url) ? url : null;
+  if (!validUrl) return;
+  el.classList.add('hyperlink');
+  el.style.cursor = 'pointer';
+  el.onclick = (e) => {
+    e.preventDefault();
+    if (window.multirp && window.multirp.openExternal) window.multirp.openExternal(validUrl);
+  };
 }
 
 // ---------- Popout sync ----------
@@ -601,6 +671,12 @@ function buildPreviewSnapshot() {
     smallUrl: lookupUrl(p.smallImageKey),
     largeTooltip: p.largeImageTooltip || '',
     smallTooltip: p.smallImageTooltip || '',
+    // v1.9.9.1 — Hyperlink Fields. Only forward valid http(s):// URLs to the
+    // popout so the popout side can render clickable details/state/images.
+    detailsUrl: /^https?:\/\//i.test(p.detailsUrl || '') ? p.detailsUrl.trim() : '',
+    stateUrl: /^https?:\/\//i.test(p.stateUrl || '') ? p.stateUrl.trim() : '',
+    largeImageUrl: /^https?:\/\//i.test(p.largeImageUrl || '') ? p.largeImageUrl.trim() : '',
+    smallImageUrl: /^https?:\/\//i.test(p.smallImageUrl || '') ? p.smallImageUrl.trim() : '',
     buttons: [
       (p.button1Label && p.button1Url) ? { label: p.button1Label, url: p.button1Url } : null,
       (p.button2Label && p.button2Url) ? { label: p.button2Label, url: p.button2Url } : null,
@@ -654,6 +730,45 @@ function bindAllFields() {
   bindField('button1Url', 'button1Url');
   bindField('button2Label', 'button2Label');
   bindField('button2Url', 'button2Url');
+
+  // v1.9.9.1 — Hyperlink Fields. Bind URL inputs and validate as the user types.
+  for (const id of ['detailsUrl', 'stateUrl', 'largeImageUrl', 'smallImageUrl']) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.addEventListener('input', () => {
+      const p = currentProfile();
+      p[id] = el.value;
+      validateLinkInput(el);
+      // Keep the toggle's "active" highlight in sync with whether a value is present.
+      const toggle = document.querySelector(`.link-toggle[data-target="${id}"]`);
+      if (toggle) toggle.classList.toggle('active', !!el.value.trim());
+      renderPreview();
+      saveStore();
+    });
+  }
+  // Toggle expand/collapse for the inline URL input under each field.
+  for (const toggle of document.querySelectorAll('.link-toggle')) {
+    toggle.addEventListener('click', () => {
+      const targetId = toggle.getAttribute('data-target');
+      const input = document.getElementById(targetId);
+      if (!input) return;
+      input.hidden = !input.hidden;
+      if (!input.hidden) input.focus();
+    });
+  }
+}
+
+// v1.9.9.1 — Validate a hyperlink URL input. Empty is fine. https:// is
+// accepted. http:// is soft-allowed with a warning. Anything else marks the
+// input as invalid (and the main process drops it before sending to Discord).
+function validateLinkInput(el) {
+  if (!el) return;
+  el.classList.remove('invalid', 'warn');
+  const v = (el.value || '').trim();
+  if (!v) return;
+  if (/^https:\/\//i.test(v)) return;
+  if (/^http:\/\//i.test(v)) { el.classList.add('warn'); return; }
+  el.classList.add('invalid');
 }
 
 // ---------- Validation ----------
@@ -679,6 +794,19 @@ function validateProfile(p) {
     const m = parseInt(p.partyMax, 10);
     if (isNaN(c) || isNaN(m) || c < 0 || m < 1 || c > m) {
       return 'Party size: current and max must be numbers, with current ≤ max.';
+    }
+  }
+  // v1.9.9.1 — Hyperlink Fields. Reject unsafe schemes loudly so the user knows.
+  for (const [key, label] of [
+    ['detailsUrl', 'Details'],
+    ['stateUrl', 'State'],
+    ['largeImageUrl', 'Large Image'],
+    ['smallImageUrl', 'Small Image']
+  ]) {
+    const v = (p[key] || '').trim();
+    if (!v) continue;
+    if (!/^https?:\/\//i.test(v)) {
+      return `${label} link: URL must start with https:// (or http:// for local testing).`;
     }
   }
   return null;
