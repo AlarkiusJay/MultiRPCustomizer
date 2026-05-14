@@ -1893,6 +1893,21 @@ setInterval(() => {
   }
 }, 1000);
 
+// v1.9.9.3 — Map the numeric-collapsed semver in package.json (e.g. 1.9.92,
+// 1.9.742) back to the user-facing dotted version (1.9.9.2, 1.9.7.4.2) we use
+// in tags, release notes, and the footer. electron-builder needs valid semver
+// in package.json so we collapse the trailing digits; this is the inverse.
+function displayVersion(v) {
+  if (!v) return '—';
+  // "1.9.9X" -> "1.9.9.X" (single trailing digit after a base 1.9.9 line)
+  const m1 = /^1\.9\.9(\d)$/.exec(v);
+  if (m1) return `1.9.9.${m1[1]}`;
+  // "1.9.7XY" -> "1.9.7.X.Y" (legacy v1.9.7.4.2 / v1.9.7.4.1 family)
+  const m2 = /^1\.9\.7(\d)(\d)$/.exec(v);
+  if (m2) return `1.9.7.${m2[1]}.${m2[2]}`;
+  return v;
+}
+
 function renderUpdatesView() {
   const us = state.updateState || {};
   const pill = document.getElementById('updStatusPill');
@@ -1907,10 +1922,11 @@ function renderUpdatesView() {
   const progressText = document.getElementById('updProgressText');
   const changelogEl = document.getElementById('updChangelog');
 
-  const cur = us.currentVersion ? `v${us.currentVersion}` : '—';
+  const curDisplay = displayVersion(us.currentVersion);
+  const cur = us.currentVersion ? `v${curDisplay}` : '—';
   versionEl.textContent = cur;
   if (us.currentVersion) {
-    footerEl.textContent = `v${us.currentVersion} · Built by Alarkius Elvya Jay`;
+    footerEl.textContent = `v${curDisplay} · Built by Alarkius Elvya Jay`;
   }
 
   autoToggle.checked = !!state.autoInstall;
@@ -1929,15 +1945,21 @@ function renderUpdatesView() {
       pill.textContent = 'Checking…';
       pill.classList.add('checking');
       checkBtn.disabled = true;
+      setUpdateMessage('info', 'Checking for updates…');
       break;
     case 'available':
-      pill.textContent = `Update available — v${us.latestVersion || '?'}`;
+      pill.textContent = `Update available — v${displayVersion(us.latestVersion) || '?'}`;
       pill.classList.add('available');
       downloadBtn.disabled = false;
+      setUpdateMessage('info', `A new version is available: v${displayVersion(us.latestVersion) || '?'}`);
       break;
     case 'not-available':
+      // v1.9.9.3 — when we're already on the latest, replace the persistent
+      // "Checking for updates…" banner with a clear "no new updates" message
+      // so the highlight resolves instead of getting stuck.
       pill.textContent = 'Up to date';
       pill.classList.add('up-to-date');
+      setUpdateMessage('info', 'No new updates as of now.');
       break;
     case 'downloading':
       pill.textContent = `Downloading… ${us.downloadPercent || 0}%`;
@@ -1945,12 +1967,14 @@ function renderUpdatesView() {
       progressWrap.hidden = false;
       progressFill.style.width = (us.downloadPercent || 0) + '%';
       progressText.textContent = (us.downloadPercent || 0) + '%';
+      setUpdateMessage('info', `Downloading update… ${us.downloadPercent || 0}%`);
       break;
     case 'downloaded':
-      pill.textContent = `Update ready — v${us.latestVersion || '?'}`;
+      pill.textContent = `Update ready — v${displayVersion(us.latestVersion) || '?'}`;
       pill.classList.add('ready');
       downloadBtn.hidden = true;
       installBtn.hidden = false;
+      setUpdateMessage('info', `Update v${displayVersion(us.latestVersion) || '?'} is ready to install.`);
       break;
     case 'error':
       pill.textContent = 'Update error';
@@ -1960,13 +1984,15 @@ function renderUpdatesView() {
     default:
       pill.textContent = 'Idle';
       pill.classList.add('idle');
+      // No status yet — keep the message area clean.
+      setUpdateMessage('info', '');
   }
 
   // Changelog
   if (us.releaseNotes) {
     changelogEl.innerHTML = formatReleaseNotes(us.releaseNotes, us.latestVersion);
   } else if (us.status === 'not-available') {
-    changelogEl.textContent = `You’re on the latest version (v${us.currentVersion}).`;
+    changelogEl.textContent = `You’re on the latest version (v${displayVersion(us.currentVersion)}).`;
   }
 }
 
