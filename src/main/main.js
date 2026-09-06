@@ -386,6 +386,11 @@ function showMainWindow() {
     try { app.dock.show(); } catch (_) {}
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
+  // Auto-started (--hidden) windows are created at opacity 0 and never get
+  // faded in, since the ready-to-show handler intentionally skips show().
+  // Without this, the window becomes technically visible but stays fully
+  // transparent until the app is restarted.
+  try { mainWindow.setOpacity(1); } catch (_) {}
   mainWindow.show();
   mainWindow.focus();
 }
