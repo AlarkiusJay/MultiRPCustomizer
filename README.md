@@ -4,6 +4,8 @@ Multi-Rich Presence Customizer
 
 Inspired by [CustomRP](https://www.customrp.xyz) — reimagined with **profile tabs**, **system tray + auto-start**, and **drop-in compatibility with your existing CustomRP `.crp` presets**. Switch between presences with a single click. No accounts, no telemetry, fully local.
 
+**All Creative Control Direction (Functions & Features) is made by Me. Claude Code simply helps with the logic and structure.**
+
 ## Flagship Features
 
 ### Custom About — Override the Discord App Description from the App
