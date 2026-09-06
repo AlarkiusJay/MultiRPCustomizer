@@ -86,7 +86,7 @@
           <label>
             Details
             <span class="counter" id="detailsCounter">0/128</span>
-            <button type="button" class="link-toggle" id="detailsLinkToggle" data-target="detailsUrl" title="Add hyperlink (v1.9.9.1)" aria-label="Toggle Details hyperlink">🔗</button>
+            <button type="button" class="link-toggle" id="detailsLinkToggle" data-target="detailsUrl" title="Add hyperlink — clickable for other viewers only, not on your own profile" aria-label="Toggle Details hyperlink">🔗</button>
           </label>
           <input type="text" id="details" maxlength="128" placeholder="First line shown on Discord" />
           <input type="url" id="detailsUrl" class="link-url-input" placeholder="https:// (turns Details into a clickable link)" hidden />
@@ -96,7 +96,7 @@
           <label>
             State
             <span class="counter" id="stateCounter">0/128</span>
-            <button type="button" class="link-toggle" id="stateLinkToggle" data-target="stateUrl" title="Add hyperlink (v1.9.9.1)" aria-label="Toggle State hyperlink">🔗</button>
+            <button type="button" class="link-toggle" id="stateLinkToggle" data-target="stateUrl" title="Add hyperlink — clickable for other viewers only, not on your own profile" aria-label="Toggle State hyperlink">🔗</button>
           </label>
           <input type="text" id="state" maxlength="128" placeholder="Second line shown on Discord" />
           <input type="url" id="stateUrl" class="link-url-input" placeholder="https:// (turns State into a clickable link)" hidden />
@@ -332,7 +332,7 @@
           <div class="preview-buttons" id="prevButtons"></div>
         </div>
         <div class="preview-note">
-          Click <b>View as others</b> to pop this out into its own window — useful since Discord hides your own buttons from your own profile.
+          Click <b>View as others</b> to pop this out into its own window — useful since Discord hides your own buttons <b>and</b> hyperlinked Details/State/images from your own profile. They render as plain (non-clickable) text/images for you, but are fully clickable for everyone else viewing your presence.
         </div>
       </aside>
     </main>

@@ -494,6 +494,16 @@ function activityVerb(type) {
   }
 }
 
+// Compute the party size string Discord appends right after the State line,
+// e.g. "(1 of 1)". Matches CustomRP's preview layout so State + party sit on
+// one row and the elapsed timer sits on its own row below.
+function formatPartyString(p) {
+  const cur = parseInt(p.partyCurrent, 10);
+  const max = parseInt(p.partyMax, 10);
+  if (!Number.isFinite(cur) || !Number.isFinite(max) || max <= 0) return '';
+  return `(${cur} of ${max})`;
+}
+
 // Compute the elapsed/range string Discord shows under the activity. Mirrors
 // the visual format "H:MM:SS elapsed" / "M:SS elapsed" / "M:SS — M:SS left".
 function formatElapsedString(p) {
@@ -589,7 +599,7 @@ function setupBrandEasterEgg() {
 
 // v1.9.9.1 — Render Details/State as a clickable link when a URL is present.
 // Falls back to plain text when no URL or when the URL is invalid.
-function renderTextWithLink(el, text, url) {
+function renderTextWithLink(el, text, url, suffix) {
   if (!el) return;
   el.innerHTML = '';
   el.classList.remove('hyperlink');
@@ -608,7 +618,11 @@ function renderTextWithLink(el, text, url) {
     el.appendChild(a);
     el.classList.add('hyperlink');
   } else {
-    el.textContent = display;
+    el.appendChild(document.createTextNode(display));
+  }
+  // Party size ("(1 of 1)") is plain text appended after State, same as Discord.
+  if (suffix && text) {
+    el.appendChild(document.createTextNode(' ' + suffix));
   }
 }
 
@@ -618,7 +632,7 @@ function renderPreview() {
   document.getElementById('prevAppName').textContent = p.name || 'App name';
   // v1.9.9.1 — hyperlink Details/State when a URL is set on the profile.
   renderTextWithLink(document.getElementById('prevDetails'), p.details, p.detailsUrl);
-  renderTextWithLink(document.getElementById('prevState'), p.state, p.stateUrl);
+  renderTextWithLink(document.getElementById('prevState'), p.state, p.stateUrl, formatPartyString(p));
 
   const elapsedEl = document.getElementById('prevElapsed');
   const elapsedStr = formatElapsedString(p);
@@ -708,6 +722,7 @@ function buildPreviewSnapshot() {
     appName: p.name || 'App name',
     details: p.details || '',
     state: p.state || '',
+    party: formatPartyString(p),
     elapsed: formatElapsedString(p),
     largeUrl: lookupUrl(p.largeImageKey),
     smallUrl: lookupUrl(p.smallImageKey),

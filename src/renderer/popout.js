@@ -32,7 +32,7 @@
     // v1.9.9.1 — Hyperlink Fields. If a URL is set on details/state, render
     // them as clickable links. Otherwise, fall back to plain text.
     renderTextOrLink($('popDetails'), snap.details, snap.detailsUrl);
-    renderTextOrLink($('popState'), snap.state, snap.stateUrl);
+    renderTextOrLink($('popState'), snap.state, snap.stateUrl, snap.party);
     $('popElapsed').textContent = snap.elapsed || '';
 
     // Username header — uses the app name as a stand-in identity.
@@ -100,7 +100,7 @@
   }
 
   // v1.9.9.1 — popout-side helpers for hyperlink rendering.
-  function renderTextOrLink(el, text, url) {
+  function renderTextOrLink(el, text, url, suffix) {
     if (!el) return;
     el.innerHTML = '';
     el.classList.remove('hyperlink');
@@ -118,7 +118,11 @@
       el.appendChild(a);
       el.classList.add('hyperlink');
     } else {
-      el.textContent = display;
+      el.appendChild(document.createTextNode(display));
+    }
+    // Party size ("(1 of 1)"), plain text appended after State, same as Discord.
+    if (suffix && text) {
+      el.appendChild(document.createTextNode(' ' + suffix));
     }
   }
   function applyImageLinkPopout(el, url) {
