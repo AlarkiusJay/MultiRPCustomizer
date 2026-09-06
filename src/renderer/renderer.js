@@ -1912,15 +1912,37 @@ setInterval(() => {
 // 1.9.742) back to the user-facing dotted version (1.9.9.2, 1.9.7.4.2) we use
 // in tags, release notes, and the footer. electron-builder needs valid semver
 // in package.json so we collapse the trailing digits; this is the inverse.
+//
+// v2.0.0 — Generalized beyond the hardcoded 1.9.9/1.9.7 families. Handles
+// any "X.Y.Z" or "X.Y.Z.W" core (2-4 numeric parts), each optionally
+// followed by an "-AlphaN" / "-BetaN" tag (with or without a dot before
+// the number, any case) — e.g. 2.0.0, 2.0.0.1, 2.0.1-Beta2, 2.1.0.2-alpha.3.
+const LEGACY_VERSION_PATTERNS = [
+  // "1.9.9X" -> "1.9.9.X" (single trailing digit after a base 1.9.9 line)
+  { re: /^1\.9\.9(\d)$/, fmt: (m) => `1.9.9.${m[1]}` },
+  // "1.9.7XY" -> "1.9.7.X.Y" (legacy v1.9.7.4.2 / v1.9.7.4.1 family)
+  { re: /^1\.9\.7(\d)(\d)$/, fmt: (m) => `1.9.7.${m[1]}.${m[2]}` }
+];
+const VERSION_CORE_RE = /^(\d+(?:\.\d+){1,3})(?:[-.](alpha|beta)\.?(\d+))?$/i;
+
 function displayVersion(v) {
   if (!v) return '—';
-  // "1.9.9X" -> "1.9.9.X" (single trailing digit after a base 1.9.9 line)
-  const m1 = /^1\.9\.9(\d)$/.exec(v);
-  if (m1) return `1.9.9.${m1[1]}`;
-  // "1.9.7XY" -> "1.9.7.X.Y" (legacy v1.9.7.4.2 / v1.9.7.4.1 family)
-  const m2 = /^1\.9\.7(\d)(\d)$/.exec(v);
-  if (m2) return `1.9.7.${m2[1]}.${m2[2]}`;
-  return v;
+  const raw = String(v).trim().replace(/^v/i, '');
+
+  for (const { re, fmt } of LEGACY_VERSION_PATTERNS) {
+    const m = re.exec(raw);
+    if (m) return fmt(m);
+  }
+
+  const m = VERSION_CORE_RE.exec(raw);
+  if (m) {
+    const [, core, tier, num] = m;
+    if (!tier) return core;
+    const tierLabel = tier[0].toUpperCase() + tier.slice(1).toLowerCase();
+    return `${core}-${tierLabel}${num}`;
+  }
+
+  return raw;
 }
 
 function renderUpdatesView() {
